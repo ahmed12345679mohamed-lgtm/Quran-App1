@@ -1,0 +1,16 @@
+{
+  "short_name": "دار التوحيد",
+  "name": "دار التوحيد - متابعة القرآن الكريم",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/4358/4358667.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#059669",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
+}
