@@ -1,13 +1,28 @@
 
 import React, { useState, useEffect } from 'react';
 import { Student, AppState, UserRole, Teacher, DailyLog, Announcement } from './types';
-import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from './constants';
+import { DAYS_OF_WEEK, APP_VERSION } from './constants';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ParentDashboard } from './components/ParentDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Button } from './components/Button';
+import { db } from './firebaseConfig';
+import { 
+  collection, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc, 
+  query, 
+  orderBy,
+  getDocs,
+  where,
+  writeBatch
+} from "firebase/firestore";
 
-// Logo Component with Dynamic Title
+// Logo Component
 const Logo = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center mb-8">
     <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center text-4xl shadow-lg mb-4 border-4 border-white">
@@ -38,31 +53,22 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
 };
 
 const App: React.FC = () => {
-  // Simulate Database with Local Storage + Initial Data
-  const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem('muhaffiz_students_v6');
-    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
-  });
+  // ----------- STATE -----------
+  const [students, setStudents] = useState<Student[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [organizationName, setOrganizationName] = useState("دار التوحيد");
+  const [adminPassword, setAdminPasswordState] = useState("456888");
+  
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [teachers, setTeachers] = useState<Teacher[]>(() => {
-      const saved = localStorage.getItem('muhaffiz_teachers_v2');
-      return saved ? JSON.parse(saved) : INITIAL_TEACHERS;
+  // App Current State
+  const [appState, setAppState] = useState<AppState>({
+    students: [],
+    teachers: [],
+    announcements: [],
+    currentUser: { role: 'GUEST' }
   });
-
-  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
-      const saved = localStorage.getItem('muhaffiz_announcements_v1');
-      return saved ? JSON.parse(saved) : [];
-  });
-
-  // App Configuration State (Organization Name)
-  const [organizationName, setOrganizationName] = useState(() => {
-      return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
-  });
-
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_org_name', organizationName);
-      document.title = `${organizationName} - متابعة القرآن الكريم`;
-  }, [organizationName]);
 
   // Notification State
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -71,38 +77,82 @@ const App: React.FC = () => {
     setNotification({ message, type });
   };
 
-  // Online/Offline State
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  
+  // ----------- FIREBASE LISTENERS (REAL-TIME) -----------
+
   useEffect(() => {
-      const handleOnline = () => {
-          setIsOnline(true);
-          showNotification('تم استعادة الاتصال بالإنترنت', 'success');
-      };
-      const handleOffline = () => setIsOnline(false);
+    // 1. Fetch Organization Settings
+    const unsubSettings = onSnapshot(doc(db, "settings", "config"), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setOrganizationName(data.organizationName || "دار التوحيد");
+        setAdminPasswordState(data.adminPassword || "456888");
+      }
+    });
 
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
+    // 2. Fetch Teachers
+    const qTeachers = query(collection(db, "teachers"), orderBy("name"));
+    const unsubTeachers = onSnapshot(qTeachers, (snapshot) => {
+      const teachersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher));
+      setTeachers(teachersData);
+    });
 
-      return () => {
-          window.removeEventListener('online', handleOnline);
-          window.removeEventListener('offline', handleOffline);
-      };
+    // 3. Fetch Students
+    const qStudents = query(collection(db, "students")); // You can limit this if needed
+    const unsubStudents = onSnapshot(qStudents, (snapshot) => {
+      const studentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
+      setStudents(studentsData);
+    });
+
+    // 4. Fetch Announcements
+    const qAnnouncements = query(collection(db, "announcements"));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
+      const annData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Announcement));
+      // Sort in memory to handle potential date string issues safely
+      annData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setAnnouncements(annData);
+      setIsLoading(false); // Initial load complete
+    });
+
+    return () => {
+      unsubSettings();
+      unsubTeachers();
+      unsubStudents();
+      unsubAnnouncements();
+    };
   }, []);
 
-  // PWA Install State
+  // Sync state wrapper
+  useEffect(() => {
+    setAppState(prev => ({
+      ...prev,
+      students,
+      teachers,
+      announcements
+    }));
+  }, [students, teachers, announcements]);
+
+  // Update Page Title
+  useEffect(() => {
+    document.title = `${organizationName} - متابعة القرآن الكريم`;
+  }, [organizationName]);
+
+
+  // ----------- OFFLINE & INSTALL -----------
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  useEffect(() => {
+      const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
+  }, []);
+
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
-
   useEffect(() => {
-    // Check if iOS
     const userAgent = window.navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(userAgent));
-
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
@@ -111,70 +161,200 @@ const App: React.FC = () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
+    if (outcome === 'accepted') setDeferredPrompt(null);
+  };
+
+  // ----------- ACTIONS (CRUD to Firestore) -----------
+
+  const updateStudent = async (updatedStudent: Student) => {
+    try {
+      const studentRef = doc(db, "students", updatedStudent.id);
+      await setDoc(studentRef, updatedStudent);
+      // No need to setStudents manually, onSnapshot will handle it
+    } catch (e) {
+      console.error(e);
+      showNotification("حدث خطأ أثناء حفظ البيانات", "error");
     }
   };
 
-  // Version Check
-  const [updateAvailable, setUpdateAvailable] = useState(false);
-
-  useEffect(() => {
-    const storedVersion = localStorage.getItem('app_version');
-    if (storedVersion && storedVersion !== APP_VERSION) {
-        setUpdateAvailable(true);
+  const deleteStudents = async (studentIds: string[]) => {
+    try {
+      const batch = writeBatch(db);
+      studentIds.forEach(id => {
+        const ref = doc(db, "students", id);
+        batch.delete(ref);
+      });
+      await batch.commit();
+      showNotification('تم حذف الطلاب بنجاح');
+    } catch (e) {
+       showNotification("فشل الحذف", "error");
     }
-    localStorage.setItem('app_version', APP_VERSION);
-  }, []);
+  };
 
-  useEffect(() => {
-    localStorage.setItem('muhaffiz_students_v6', JSON.stringify(students));
-  }, [students]);
+  const markRemainingStudentsAbsent = async () => {
+      const teacherId = appState.currentUser.id || 'unknown';
+      const teacherName = appState.currentUser.name || 'المعلم';
+      const todayString = new Date().toDateString();
 
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_teachers_v2', JSON.stringify(teachers));
-  }, [teachers]);
+      const studentsToMark: Student[] = [];
+      students.forEach(student => {
+          if (student.teacherId !== teacherId) return;
+          const hasLogToday = student.logs.some(log => new Date(log.date).toDateString() === todayString);
+          if (!hasLogToday) studentsToMark.push(student);
+      });
 
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_announcements_v1', JSON.stringify(announcements));
-  }, [announcements]);
+      if (studentsToMark.length === 0) {
+          showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success');
+          return;
+      }
 
-  const [appState, setAppState] = useState<AppState>({
-    students: students,
-    teachers: teachers,
-    announcements: announcements,
-    currentUser: { role: 'GUEST' }
-  });
+      if (!window.confirm(`سيتم تسجيل الغياب لـ ${studentsToMark.length} طالب. هل أنت متأكد؟`)) return;
 
-  // Input State for Login
+      try {
+        const batch = writeBatch(db);
+        studentsToMark.forEach(student => {
+            const absentLog: DailyLog = {
+                id: 'absent_' + Date.now() + Math.random(),
+                date: new Date().toISOString(),
+                teacherId,
+                teacherName,
+                seenByParent: false,
+                isAbsent: true,
+                notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.'
+            };
+            const updatedStudent = { ...student, logs: [absentLog, ...student.logs] };
+            const ref = doc(db, "students", student.id);
+            batch.set(ref, updatedStudent);
+        });
+        await batch.commit();
+        showNotification(`تم تسجيل الغياب لـ ${studentsToMark.length} طالب بنجاح`, 'success');
+      } catch (e) {
+        showNotification("خطأ أثناء تسجيل الغياب", "error");
+      }
+  };
+
+  const addStudent = async (name: string, manualCode: string) => {
+      // Manual Code logic
+      const newStudent: Student = {
+          id: 's_' + Date.now() + Math.random().toString(36).substr(2, 9),
+          teacherId: appState.currentUser.id || 't1', 
+          name: name,
+          parentCode: manualCode, // Use manual code
+          weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, expectedTime: '', isActive: true })),
+          payments: [],
+          logs: []
+      };
+
+      try {
+        await setDoc(doc(db, "students", newStudent.id), newStudent);
+        return newStudent;
+      } catch (e) {
+        showNotification("فشل إضافة الطالب", "error");
+        throw e;
+      }
+  };
+
+  const addTeacher = async (name: string, loginCode: string) => {
+      const newTeacher: Teacher = {
+          id: 't_' + Date.now(),
+          name,
+          loginCode
+      };
+      try {
+        await setDoc(doc(db, "teachers", newTeacher.id), newTeacher);
+        showNotification('تم إضافة المحفظ بنجاح');
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  const updateTeacher = async (id: string, name: string, loginCode: string) => {
+      try {
+        const ref = doc(db, "teachers", id);
+        await updateDoc(ref, { name, loginCode });
+        showNotification('تم تعديل بيانات المحفظ بنجاح');
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  const deleteTeacher = async (id: string) => {
+      try {
+        await deleteDoc(doc(db, "teachers", id));
+        showNotification('تم حذف المحفظ بنجاح');
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  const markLogsAsSeen = async (studentId: string, logIds: string[]) => {
+    const student = students.find(s => s.id === studentId);
+    if (!student) return;
+
+    const updatedLogs = student.logs.map(log => {
+        if (logIds.includes(log.id)) {
+            return { ...log, seenByParent: true, seenAt: new Date().toISOString() };
+        }
+        return log;
+    });
+
+    await updateStudent({ ...student, logs: updatedLogs });
+    showNotification('تم تأكيد الاطلاع', 'success');
+  };
+
+  const addAnnouncement = async (ann: Announcement) => {
+      try {
+        await setDoc(doc(db, "announcements", ann.id), ann);
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+      try {
+        await deleteDoc(doc(db, "announcements", id));
+        showNotification('تم حذف الإعلان');
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  // Handle Settings Updates
+  const updateOrganizationName = async (name: string) => {
+      try {
+          await setDoc(doc(db, "settings", "config"), { organizationName: name }, { merge: true });
+          setOrganizationName(name); // Optimistic update
+      } catch (e) { showNotification("خطأ في حفظ الإعدادات", "error"); }
+  };
+
+  const updateAdminPassword = async (pass: string) => {
+      try {
+          await setDoc(doc(db, "settings", "config"), { adminPassword: pass }, { merge: true });
+          showNotification("تم تحديث كلمة المرور", "success");
+      } catch (e) { showNotification("خطأ", "error"); }
+  };
+
+  // ----------- LOGIN LOGIC -----------
   const [activeLoginTab, setActiveLoginTab] = useState<'PARENT' | 'TEACHER' | 'ADMIN'>('PARENT');
   
-  // Parent Inputs
   const [parentCodeInput, setParentCodeInput] = useState('');
   const [parentPhoneInput, setParentPhoneInput] = useState('');
-  const [parentSelectedTeacherId, setParentSelectedTeacherId] = useState(''); // New: Parent selects teacher
-  const [showPhoneSetup, setShowPhoneSetup] = useState(false); // To trigger the one-time setup
+  const [parentSelectedTeacherId, setParentSelectedTeacherId] = useState('');
+  const [showPhoneSetup, setShowPhoneSetup] = useState(false);
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
   
-  // Teacher Inputs
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [teacherCodeInput, setTeacherCodeInput] = useState('');
-
-  // Admin Inputs
-  const [adminPassword, setAdminPassword] = useState('');
-
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  const handleLogout = () => {
+    setAppState(prev => ({ ...prev, currentUser: { role: 'GUEST' } }));
+    setParentCodeInput('');
+    setParentPhoneInput('');
+    setLoginError('');
+    setSelectedTeacherId('');
+    setTeacherCodeInput('');
+    setAdminPasswordInput('');
+    setShowPhoneSetup(false);
+  };
 
   const handleTeacherLogin = (e: React.FormEvent) => {
     e.preventDefault();
     const teacher = teachers.find(t => t.id === selectedTeacherId);
-    
     if (teacher) {
         if (teacher.loginCode === teacherCodeInput) {
-            setAppState(prev => ({ 
-                ...prev, 
-                currentUser: { role: 'TEACHER', id: teacher.id, name: teacher.name } 
-            }));
+            setAppState(prev => ({ ...prev, currentUser: { role: 'TEACHER', id: teacher.id, name: teacher.name } }));
             setLoginError('');
         } else {
             setLoginError("رقم الدخول (الكود الخاص) غير صحيح");
@@ -186,26 +366,17 @@ const App: React.FC = () => {
 
   const handleParentLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!parentSelectedTeacherId) {
         setLoginError('الرجاء اختيار اسم المحفظ أولاً');
         return;
     }
-
-    // Find student matching code AND selected teacher
-    const student = students.find(s => 
-        s.parentCode === parentCodeInput && 
-        s.teacherId === parentSelectedTeacherId
-    );
+    const student = students.find(s => s.parentCode === parentCodeInput && s.teacherId === parentSelectedTeacherId);
     
     if (student) {
-      // Check if phone is already registered
       if (student.parentPhone) {
-          // Login directly
           setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } }));
           setLoginError('');
       } else {
-          // First time login, require phone setup
           setPendingStudentId(student.id);
           setShowPhoneSetup(true);
           setLoginError('');
@@ -215,20 +386,16 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCompleteParentProfile = (e: React.FormEvent) => {
+  const handleCompleteParentProfile = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!parentPhoneInput || parentPhoneInput.length < 10) {
           setLoginError('يرجى كتابة رقم هاتف صحيح');
           return;
       }
-
       if (pendingStudentId) {
           const student = students.find(s => s.id === pendingStudentId);
           if (student) {
-              const newStudents = students.map(s => s.id === student.id ? { ...s, parentPhone: parentPhoneInput } : s);
-              setStudents(newStudents);
-              
-              // Login
+              await updateStudent({ ...student, parentPhone: parentPhoneInput });
               setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } }));
               setShowPhoneSetup(false);
               setPendingStudentId(null);
@@ -238,8 +405,7 @@ const App: React.FC = () => {
 
   const handleAdminLogin = (e: React.FormEvent) => {
       e.preventDefault();
-      const storedPass = localStorage.getItem('admin_password') || '456888';
-      if (adminPassword === storedPass) {
+      if (adminPasswordInput === adminPassword) {
           setAppState(prev => ({ ...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }}));
           setLoginError('');
       } else {
@@ -247,186 +413,31 @@ const App: React.FC = () => {
       }
   };
 
-  const handleLogout = () => {
-    setAppState(prev => ({ ...prev, currentUser: { role: 'GUEST' } }));
-    setParentCodeInput('');
-    setParentPhoneInput('');
-    setParentSelectedTeacherId('');
-    setLoginError('');
-    setSelectedTeacherId('');
-    setTeacherCodeInput('');
-    setAdminPassword('');
-    setShowPhoneSetup(false);
-  };
+  // ----------- RENDER -----------
 
-  const updateStudent = (updatedStudent: Student) => {
-    const newStudents = students.map(s => s.id === updatedStudent.id ? updatedStudent : s);
-    setStudents(newStudents);
-  };
-
-  const deleteStudents = (studentIds: string[]) => {
-      // Create a clean new array without the deleted items
-      setStudents(prevStudents => {
-          const remaining = prevStudents.filter(s => !studentIds.includes(s.id));
-          return [...remaining];
-      });
-      showNotification('تم حذف الطالب بنجاح');
-  };
-
-  const markRemainingStudentsAbsent = () => {
-      const teacherId = appState.currentUser.id || 'unknown';
-      const teacherName = appState.currentUser.name || 'المعلم';
-      const todayString = new Date().toDateString(); // Robust date comparison
-
-      let count = 0;
-
-      // Calculate logic first
-      const studentsToMarkIds: string[] = [];
-      
-      students.forEach(student => {
-          if (student.teacherId !== teacherId) return;
-          
-          const hasLogToday = student.logs.some(log => {
-              const logDate = new Date(log.date);
-              return logDate.toDateString() === todayString;
-          });
-
-          if (!hasLogToday) {
-              studentsToMarkIds.push(student.id);
-          }
-      });
-
-      if (studentsToMarkIds.length === 0) {
-          showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success');
-          return;
-      }
-
-      if (!window.confirm(`سيتم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب. هل أنت متأكد؟`)) {
-          return;
-      }
-
-      // Perform update
-      setStudents(prevStudents => {
-          return prevStudents.map(student => {
-              if (studentsToMarkIds.includes(student.id)) {
-                  count++;
-                  const absentLog: DailyLog = {
-                      id: 'absent_' + Date.now() + Math.random(),
-                      date: new Date().toISOString(),
-                      teacherId,
-                      teacherName,
-                      seenByParent: false,
-                      isAbsent: true,
-                      notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.'
-                  };
-                  return { ...student, logs: [absentLog, ...student.logs] };
-              }
-              return student;
-          });
-      });
-
-      // Show success message with notification
-      showNotification(`تم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب بنجاح`, 'success');
-  };
-
-  const addStudent = (name: string, manualCode: string) => {
-      // Manual Code logic
-      const newStudent: Student = {
-          id: 's_' + Date.now() + Math.random(),
-          teacherId: appState.currentUser.id || 't1', 
-          name: name,
-          parentCode: manualCode, // Use manual code
-          weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, expectedTime: '', isActive: true })),
-          payments: [],
-          logs: []
-      };
-
-      setStudents([newStudent, ...students]);
-      return newStudent;
-  };
-
-  const addTeacher = (name: string, loginCode: string) => {
-      const newTeacher: Teacher = {
-          id: 't_' + Date.now(),
-          name,
-          loginCode
-      };
-      setTeachers(prev => [...prev, newTeacher]);
-      showNotification('تم إضافة المحفظ بنجاح');
-  };
-
-  const updateTeacher = (id: string, name: string, loginCode: string) => {
-      setTeachers(prev => prev.map(t => 
-          t.id === id ? { ...t, name, loginCode } : t
-      ));
-      showNotification('تم تعديل بيانات المحفظ بنجاح');
-  };
-
-  const deleteTeacher = (id: string) => {
-      setTeachers(prevTeachers => {
-          const remaining = prevTeachers.filter(t => t.id !== id);
-          return [...remaining];
-      });
-      showNotification('تم حذف المحفظ بنجاح');
-  };
-
-  const markLogsAsSeen = (studentId: string, logIds: string[]) => {
-    const studentIndex = students.findIndex(s => s.id === studentId);
-    if (studentIndex === -1) return;
-
-    const student = students[studentIndex];
-    const updatedLogs = student.logs.map(log => {
-        if (logIds.includes(log.id)) {
-            return { ...log, seenByParent: true, seenAt: new Date().toISOString() };
-        }
-        return log;
-    });
-
-    const updatedStudent = { ...student, logs: updatedLogs };
-    updateStudent(updatedStudent);
-    showNotification('تم تأكيد الاطلاع', 'success');
-  };
-
-  const addAnnouncement = (ann: Announcement) => {
-      setAnnouncements(prev => [ann, ...prev]);
-  };
-
-  const deleteAnnouncement = (id: string) => {
-      setAnnouncements(prev => prev.filter(a => a.id !== id));
-      showNotification('تم حذف الإعلان');
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-4">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-emerald-600"></div>
+        <p className="text-gray-500 font-bold">جاري الاتصال بقاعدة البيانات...</p>
+      </div>
+    );
+  }
 
   return (
       <>
-        {/* Offline Status Bar */}
         {!isOnline && (
             <div className="bg-gray-800 text-white text-center text-sm p-1 fixed top-0 left-0 right-0 z-[110]">
-                📡 وضع عدم الاتصال: البيانات تحفظ محلياً
+                📡 وضع عدم الاتصال: التغييرات ستحفظ عند عودة الإنترنت
             </div>
         )}
 
-        {/* Notification Toast */}
         {notification && (
             <NotificationToast 
                 message={notification.message} 
                 type={notification.type} 
                 onClose={() => setNotification(null)} 
             />
-        )}
-
-        {updateAvailable && (
-            <div className="fixed top-8 left-0 right-0 bg-gradient-to-r from-emerald-600 to-teal-500 text-white p-3 text-center z-50 shadow-lg flex justify-between items-center px-4 animate-slide-down">
-                <div>
-                    <span className="font-bold">تحديث جديد متوفر!</span>
-                    <span className="text-sm opacity-90 mr-2">أغلق التطبيق وافتحه مرة أخرى.</span>
-                </div>
-                <button 
-                    onClick={() => setUpdateAvailable(false)} 
-                    className="bg-white/20 px-3 py-1 rounded hover:bg-white/30"
-                >
-                    حسناً
-                </button>
-            </div>
         )}
 
         {appState.currentUser.role === 'ADMIN' ? (
@@ -437,9 +448,8 @@ const App: React.FC = () => {
                 onDeleteTeacher={deleteTeacher}
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
-                // Organization Name Props
                 organizationName={organizationName}
-                onUpdateOrganizationName={setOrganizationName}
+                onUpdateOrganizationName={updateOrganizationName}
             />
         ) : appState.currentUser.role === 'TEACHER' ? (
             <TeacherDashboard 
@@ -471,7 +481,6 @@ const App: React.FC = () => {
 
                 {!showPhoneSetup ? (
                     <>
-                        {/* Tab Switcher */}
                         <div className="flex mb-6 bg-gray-100 p-1 rounded-lg">
                             <button 
                                 onClick={() => { setActiveLoginTab('PARENT'); setLoginError(''); }}
@@ -559,8 +568,8 @@ const App: React.FC = () => {
                                     type="password"
                                     placeholder="كلمة المرور"
                                     className="w-full p-2 border rounded text-center"
-                                    value={adminPassword}
-                                    onChange={e => setAdminPassword(e.target.value)}
+                                    value={adminPasswordInput}
+                                    onChange={e => setAdminPasswordInput(e.target.value)}
                                 />
                                 {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
                                 <Button variant="danger" type="submit" className="w-full">دخول المسؤول</Button>
@@ -612,10 +621,6 @@ const App: React.FC = () => {
                         </button>
                     </div>
                 )}
-            </div>
-            
-            <div className="mt-6 text-center text-emerald-800/50 text-sm">
-                <p>يعمل التطبيق بدون إنترنت. يتم حفظ البيانات على الهاتف.</p>
             </div>
             </div>
         )}
