@@ -263,7 +263,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [jadeed, setJadeed] = useState<QuranAssignment>({ ...emptyAssignment });
   const [murajaahList, setMurajaahList] = useState<QuranAssignment[]>([{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
   const [notes, setNotes] = useState('');
-  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [isGeneratingMessage, setIsGeneratingMessage] = useState(false);
   
   const [nextJadeed, setNextJadeed] = useState<QuranAssignment>({ ...emptyAssignment, grade: Grade.GOOD });
   const [nextMurajaahList, setNextMurajaahList] = useState<QuranAssignment[]>([{ ...emptyAssignment }]);
@@ -335,9 +335,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
-  const handleGenerateAIMessage = async () => {
+  const handleGenerateMessage = async () => {
     if (!selectedStudent) return;
-    setIsGeneratingAI(true);
+    setIsGeneratingMessage(true);
     const tempLog: DailyLog = {
       id: 'temp',
       date: new Date().toISOString(),
@@ -349,10 +349,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       notes: notes
     };
 
-    const aiMessage = await generateEncouragement(selectedStudent.name, tempLog);
+    const message = await generateEncouragement(selectedStudent.name, tempLog);
     const separator = notes ? '\n\n' : '';
-    setNotes(notes + separator + "✨ " + aiMessage);
-    setIsGeneratingAI(false);
+    setNotes(notes + separator + "✨ " + message);
+    setIsGeneratingMessage(false);
   };
 
   const handleSaveLog = () => {
@@ -445,42 +445,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         return a.name;
     };
 
-    // Current Performance
+    // Prepare message parts
+    const arrival = formatTime12Hour(attendance.arrivalTime);
+    const departure = attendance.departureTime ? formatTime12Hour(attendance.departureTime) : '--';
+    
     const jadeedText = `${formatAss(jadeed)} ${!jadeed.grade ? '' : `(التقدير: ${jadeed.grade})`}`;
     const murajaahText = murajaahList.length > 0 
         ? murajaahList.map(m => `▫️ ${formatAss(m)} (التقدير: ${m.grade})`).join('\n') 
         : 'لا توجد مراجعة';
 
-    // Next Assignment (Lawh)
+    // The Next Assignment (Lawh)
     const nextJadeedText = formatAss(nextJadeed);
     const nextMurajaahText = nextMurajaahList.length > 0 
         ? nextMurajaahList.map(m => `▫️ ${formatAss(m)}`).join('\n')
         : 'لم يحدد بعد';
 
-    let message = `*🕌 تقرير متابعة القرآن الكريم - دار التوحيد 🕌*\n\n`;
-    message += `👤 *الطالب:* ${selectedStudent.name}\n`;
-    message += `📅 *التاريخ:* ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'short' })}\n`;
-    message += `🕐 *الحضور:* ${formatTime12Hour(attendance.arrivalTime)} - *الانصراف:* ${attendance.departureTime ? formatTime12Hour(attendance.departureTime) : '--'}\n`;
-    message += `──────────────────\n`;
+    let message = `*🕌 تقرير متابعة الطالب - دار التوحيد 🕌*\n\n`;
+    message += `👤 *الاسم:* ${selectedStudent.name}\n`;
+    message += `📅 *التاريخ:* ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}\n`;
+    message += `🕐 *الحضور:* ${arrival} - *الانصراف:* ${departure}\n\n`;
+    message += `───────────────\n`;
     
-    message += `📊 *الأداء اليوم:*\n`;
+    message += `📊 *إنجاز اليوم:*\n`;
     message += `✅ *الحفظ الجديد:* ${jadeedText}\n`;
     if (murajaahList.length > 0) {
         message += `🔄 *المراجعة:*\n${murajaahText}\n`;
     }
     
-    message += `\n📝 *الواجب القادم (اللوح):*\n`;
-    message += `📌 *حفظ:* ${nextJadeedText}\n`;
+    message += `\n───────────────\n`;
+    message += `📝 *الواجب القادم (اللوح):*\n`;
+    message += `📌 *الحفظ المطلوب:* ${nextJadeedText}\n`;
     if (nextMurajaahList.length > 0) {
-        message += `📌 *مراجعة:*\n${nextMurajaahText}\n`;
-    }
-
-    if (notes) {
-        message += `\n💬 *ملاحظات المعلم & رسالة تشجيعية:*\n${notes}\n`;
+        message += `📌 *المراجعة:* \n${nextMurajaahText}\n`;
     }
     
-    // Add a footer
-    message += `\nنسأل الله أن يجعله من أهل القرآن. ✨`;
+    if (notes && notes.trim().length > 0) {
+        message += `\n───────────────\n`;
+        message += `💬 *ملاحظات المعلم:*\n${notes}\n`;
+    }
+    
+    message += `\n🌷 *نسأل الله أن يجعله من أهل القرآن.*`;
     
     const url = `https://wa.me/2${selectedStudent.parentPhone}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -1214,11 +1218,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             
                             <div className="flex flex-col gap-2">
                                 <Button 
-                                    onClick={handleGenerateAIMessage}
-                                    className="w-full text-xs py-2 bg-purple-600 hover:bg-purple-700 flex justify-center"
-                                    isLoading={isGeneratingAI}
+                                    onClick={handleGenerateMessage}
+                                    className="w-full text-xs py-2 bg-purple-600 hover:bg-purple-700 flex justify-center shadow-md"
+                                    isLoading={isGeneratingMessage}
                                 >
-                                    ✨ توليد رسالة تشجيعية (AI)
+                                    ✨ توليد رسالة تشجيعية (تلقائي)
                                 </Button>
                                 {selectedStudent.parentPhone && (
                                     <button 
