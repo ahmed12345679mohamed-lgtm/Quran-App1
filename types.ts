@@ -11,24 +11,45 @@ export type AssignmentType = 'SURAH' | 'JUZ' | 'RANGE';
 
 export interface QuranAssignment {
   type: AssignmentType;
-  name: string; // Surah Name or Juz Name
-  endName?: string; // For RANGE type: The ending Surah
+  name: string;
+  endName?: string;
   ayahFrom: number;
   ayahTo: number;
+  juzNumber?: number;
   grade: Grade;
 }
 
 export interface Attendance {
-  arrivalTime: string; // "16:00"
-  departureTime?: string; // "18:00"
+  arrivalTime: string;
+  departureTime?: string;
 }
+
+// --- NEW STRUCTURE FOR MULTIPLE QUESTIONS ---
+export interface QuizItem {
+  id: string;
+  question: string;
+  correctAnswer: string;
+  wrongAnswers: string[];
+}
+
+export interface AdabSession {
+  title: string; // e.g. "Lesson Topic"
+  quizzes: QuizItem[]; // Array of questions
+}
+// --------------------------------------------
 
 export interface DailyLog {
   id: string;
-  date: string; // ISO string
-  isAbsent?: boolean; // New: Flag for absence
-  jadeed?: QuranAssignment; // Optional because if absent, no jadeed
-  murajaah?: QuranAssignment[]; // Optional
+  date: string;
+  isAbsent?: boolean; 
+  isAdab?: boolean; 
+  
+  adabSession?: AdabSession; // Now holds multiple questions
+  parentQuizScore?: number; // Store score (e.g., 3 out of 5)
+  parentQuizMax?: number; 
+  
+  jadeed?: QuranAssignment; 
+  murajaah?: QuranAssignment[]; 
   attendance?: Attendance;
   notes?: string;
   teacherId: string;
@@ -39,38 +60,46 @@ export interface DailyLog {
 
 export interface Payment {
   id: string;
-  title: string; // e.g., "رسوم شهر يناير"
+  title: string; 
   amount: number;
   date: string;
-  recordedBy: string; // Teacher Name
-  notes?: string; // Added notes
+  recordedBy: string; 
+  notes?: string; 
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string; // e.g., "درس رياضيات", "نوم", "مدرسة"
+  time: string;  // e.g., "14:00"
 }
 
 export interface WeeklySchedule {
-  day: string; // "السبت", "الأحد"...
-  expectedTime: string; // "15:30"
-  isActive: boolean;
+  day: string; 
+  events: CalendarEvent[]; // Changed from simple expectedTime to list of events
+  isDayOff?: boolean; // Flag if the student is completely off/busy
 }
 
 export interface Student {
   id: string;
-  teacherId: string; // LINK TO SPECIFIC TEACHER
+  teacherId: string; 
   name: string;
-  parentCode: string; // Simple login for parents
-  parentPhone?: string; // Captured at login
+  parentCode: string; 
+  parentPhone?: string; 
   logs: DailyLog[];
   payments: Payment[];
   weeklySchedule: WeeklySchedule[];
-  nextPlan?: { // Changed from simple Assignment to complex Plan
+  nextPlan?: { 
     jadeed: QuranAssignment;
     murajaah: QuranAssignment[];
   }; 
+  calculatorNotes?: string; // New field for calculator notes
+  isFeeOverdue?: boolean; // NEW: Flag for manual fee reminder
 }
 
 export interface Teacher {
   id: string;
   name: string;
-  loginCode: string; // Special access code assigned by admin
+  loginCode: string; 
 }
 
 export type AnnouncementType = 'EXAM' | 'COMPETITION' | 'GENERAL';
@@ -92,7 +121,7 @@ export interface AppState {
   announcements: Announcement[];
   currentUser: {
     role: UserRole;
-    id?: string; // Teacher ID or Student ID
-    name?: string; // Display name
+    id?: string; 
+    name?: string; 
   };
 }

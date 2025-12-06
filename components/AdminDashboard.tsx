@@ -1,22 +1,24 @@
 
 import React, { useState, useEffect } from 'react';
-import { Teacher } from '../types';
+import { Teacher, Student } from '../types';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
   teachers: Teacher[];
+  // Added students prop to calculate counts
+  students: Student[];
   onAddTeacher: (name: string, loginCode: string) => void;
   onUpdateTeacher: (id: string, name: string, loginCode: string) => void;
   onDeleteTeacher: (id: string) => void;
   onLogout: () => void;
   onShowNotification: (message: string, type: 'success' | 'error') => void;
-  // New props for organization settings
   organizationName: string;
   onUpdateOrganizationName: (name: string) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
     teachers, 
+    students,
     onAddTeacher, 
     onUpdateTeacher, 
     onDeleteTeacher, 
@@ -74,7 +76,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setEditingId(t.id);
       setName(t.name);
       setLoginCode(t.loginCode);
-      // Scroll to teacher form
       const el = document.getElementById('teacher-form');
       if(el) el.scrollIntoView({ behavior: 'smooth' });
   };
@@ -208,23 +209,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {teachers.length === 0 ? (
                     <p className="text-gray-500 text-center">لا يوجد محفظين.</p>
                 ) : (
-                    teachers.map(t => (
-                        <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                            <div>
-                                <p className="font-bold text-gray-800">{t.name}</p>
-                                <p className="text-sm text-gray-500 font-mono">كود الدخول: {t.loginCode}</p>
+                    teachers.map(t => {
+                        // Calculate student count per teacher
+                        const studentCount = students.filter(s => s.teacherId === t.id).length;
+                        return (
+                            <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
+                                <div>
+                                    <p className="font-bold text-gray-800 flex items-center gap-2">
+                                        {t.name}
+                                        {/* Display Count in semi-transparent font */}
+                                        <span className="text-sm text-gray-400 font-normal">({studentCount} طالب)</span>
+                                    </p>
+                                    <p className="text-sm text-gray-500 font-mono">كود الدخول: {t.loginCode}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        type="button"
+                                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                                        onClick={(e) => { e.preventDefault(); startEdit(t); }}
+                                    >
+                                        تعديل
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex gap-2">
-                                <button 
-                                    type="button"
-                                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
-                                    onClick={(e) => { e.preventDefault(); startEdit(t); }}
-                                >
-                                    تعديل
-                                </button>
-                            </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

@@ -1,16 +1,16 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student, AppState, UserRole, Teacher, DailyLog, Announcement } from './types';
-import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from './constants';
-import { TeacherDashboard } from './components/TeacherDashboard';
-import { ParentDashboard } from './components/ParentDashboard';
-import { AdminDashboard } from './components/AdminDashboard';
-import { Button } from './components/Button';
+import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem } from '../types';
+import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from '../constants';
+import { TeacherDashboard } from './TeacherDashboard';
+import { ParentDashboard } from './ParentDashboard';
+import { AdminDashboard } from './AdminDashboard';
+import { Button } from './Button';
 
 // Logo Component with Dynamic Title
 const Logo = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center mb-8">
-    <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center text-4xl shadow-lg mb-4 border-4 border-white">
+    <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center text-4xl shadow-lg mb-4 border-4 border-white animate-bounce-in">
       🕌
     </div>
     <h1 className="text-4xl font-bold font-serif text-emerald-900 text-center">{title}</h1>
@@ -18,7 +18,6 @@ const Logo = ({ title }: { title: string }) => (
   </div>
 );
 
-// Notification Component
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -37,24 +36,28 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   );
 };
 
+const normalizeArabicNumbers = (str: string) => {
+  return str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
+};
+
 const App: React.FC = () => {
-  // Simulate Database with Local Storage + Initial Data
+  // --- DATA LOADING & STATE ---
+  // RESET TO CLASSIC VERSION v100
   const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem('muhaffiz_students_v6');
+    const saved = localStorage.getItem('muhaffiz_students_v100');
     return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
   });
 
   const [teachers, setTeachers] = useState<Teacher[]>(() => {
-      const saved = localStorage.getItem('muhaffiz_teachers_v2');
+      const saved = localStorage.getItem('muhaffiz_teachers_v100');
       return saved ? JSON.parse(saved) : INITIAL_TEACHERS;
   });
 
   const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
-      const saved = localStorage.getItem('muhaffiz_announcements_v1');
+      const saved = localStorage.getItem('muhaffiz_announcements_v100');
       return saved ? JSON.parse(saved) : [];
   });
 
-  // App Configuration State (Organization Name)
   const [organizationName, setOrganizationName] = useState(() => {
       return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
   });
@@ -64,45 +67,28 @@ const App: React.FC = () => {
       document.title = `${organizationName} - متابعة القرآن الكريم`;
   }, [organizationName]);
 
-  // Notification State
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
   };
 
-  // Online/Offline State
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   useEffect(() => {
-      const handleOnline = () => {
-          setIsOnline(true);
-          showNotification('تم استعادة الاتصال بالإنترنت', 'success');
-      };
+      const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
       const handleOffline = () => setIsOnline(false);
-
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-
-      return () => {
-          window.removeEventListener('online', handleOnline);
-          window.removeEventListener('offline', handleOffline);
-      };
+      window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+      return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
-    // Check if iOS
     const userAgent = window.navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(userAgent));
-
-    const handler = (e: any) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
@@ -111,294 +97,280 @@ const App: React.FC = () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
+    if (outcome === 'accepted') { setDeferredPrompt(null); }
   };
 
-  // Version Check
   const [updateAvailable, setUpdateAvailable] = useState(false);
 
   useEffect(() => {
     const storedVersion = localStorage.getItem('app_version');
-    if (storedVersion && storedVersion !== APP_VERSION) {
-        setUpdateAvailable(true);
-    }
+    if (storedVersion && storedVersion !== APP_VERSION) { setUpdateAvailable(true); }
     localStorage.setItem('app_version', APP_VERSION);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('muhaffiz_students_v6', JSON.stringify(students));
-  }, [students]);
+  useEffect(() => { localStorage.setItem('muhaffiz_students_v100', JSON.stringify(students)); }, [students]);
+  useEffect(() => { localStorage.setItem('muhaffiz_teachers_v100', JSON.stringify(teachers)); }, [teachers]);
+  useEffect(() => { localStorage.setItem('muhaffiz_announcements_v100', JSON.stringify(announcements)); }, [announcements]);
 
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_teachers_v2', JSON.stringify(teachers));
-  }, [teachers]);
+  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, currentUser: { role: 'GUEST' } });
 
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_announcements_v1', JSON.stringify(announcements));
-  }, [announcements]);
-
-  const [appState, setAppState] = useState<AppState>({
-    students: students,
-    teachers: teachers,
-    announcements: announcements,
-    currentUser: { role: 'GUEST' }
-  });
-
-  // Input State for Login
-  const [activeLoginTab, setActiveLoginTab] = useState<'PARENT' | 'TEACHER' | 'ADMIN'>('PARENT');
+  // --- LOGIN & NAVIGATION STATE ---
+  const [loginView, setLoginView] = useState<'SELECTION' | 'PARENT' | 'TEACHER' | 'ADMIN'>('SELECTION');
   
-  // Parent Inputs
   const [parentCodeInput, setParentCodeInput] = useState('');
   const [parentPhoneInput, setParentPhoneInput] = useState('');
-  const [showPhoneSetup, setShowPhoneSetup] = useState(false); // To trigger the one-time setup
+  const [parentSelectedTeacher, setParentSelectedTeacher] = useState('');
+  const [showPhoneSetup, setShowPhoneSetup] = useState(false);
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
   
-  // Teacher Inputs
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [teacherCodeInput, setTeacherCodeInput] = useState('');
-
-  // Admin Inputs
   const [adminPassword, setAdminPassword] = useState('');
-
   const [loginError, setLoginError] = useState('');
 
-  const handleTeacherLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const teacher = teachers.find(t => t.id === selectedTeacherId);
-    
-    if (teacher) {
-        if (teacher.loginCode === teacherCodeInput) {
-            setAppState(prev => ({ 
-                ...prev, 
-                currentUser: { role: 'TEACHER', id: teacher.id, name: teacher.name } 
-            }));
-            setLoginError('');
-        } else {
-            setLoginError("رقم الدخول (الكود الخاص) غير صحيح");
-        }
-    } else {
-        setLoginError("الرجاء اختيار اسم المعلم");
-    }
+  const handleTeacherLogin = (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      const teacher = teachers.find(t => t.id === selectedTeacherId); 
+      if (teacher) { 
+          const normalizedInput = normalizeArabicNumbers(teacherCodeInput);
+          if (teacher.loginCode === normalizedInput) { 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'TEACHER', id: teacher.id, name: teacher.name } })); 
+              setLoginError(''); 
+          } else { 
+              setLoginError("رقم الدخول (الكود الخاص) غير صحيح"); 
+          } 
+      } else { 
+          setLoginError("الرجاء اختيار اسم المعلم"); 
+      } 
   };
-
-  const handleParentLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const student = students.find(s => s.parentCode === parentCodeInput);
-    
-    if (student) {
-      // Check if phone is already registered
-      if (student.parentPhone) {
-          // Login directly
-          setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } }));
-          setLoginError('');
-      } else {
-          // First time login, require phone setup
-          setPendingStudentId(student.id);
-          setShowPhoneSetup(true);
-          setLoginError('');
-      }
-    } else {
-      setLoginError('كود الطالب غير صحيح، حاول مرة أخرى.');
-    }
-  };
-
-  const handleCompleteParentProfile = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!parentPhoneInput || parentPhoneInput.length < 10) {
-          setLoginError('يرجى كتابة رقم هاتف صحيح');
-          return;
-      }
-
-      if (pendingStudentId) {
-          const student = students.find(s => s.id === pendingStudentId);
-          if (student) {
-              const newStudents = students.map(s => s.id === student.id ? { ...s, parentPhone: parentPhoneInput } : s);
-              setStudents(newStudents);
-              
-              // Login
-              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } }));
-              setShowPhoneSetup(false);
-              setPendingStudentId(null);
-          }
-      }
-  };
-
-  const handleAdminLogin = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (adminPassword === '456888') {
-          setAppState(prev => ({ ...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }}));
-          setLoginError('');
-      } else {
-          setLoginError('كلمة المرور غير صحيحة');
-      }
-  };
-
-  const handleLogout = () => {
-    setAppState(prev => ({ ...prev, currentUser: { role: 'GUEST' } }));
-    setParentCodeInput('');
-    setParentPhoneInput('');
-    setLoginError('');
-    setSelectedTeacherId('');
-    setTeacherCodeInput('');
-    setAdminPassword('');
-    setShowPhoneSetup(false);
-  };
-
-  const updateStudent = (updatedStudent: Student) => {
-    const newStudents = students.map(s => s.id === updatedStudent.id ? updatedStudent : s);
-    setStudents(newStudents);
-  };
-
-  const deleteStudents = (studentIds: string[]) => {
-      // Create a clean new array without the deleted items
-      setStudents(prevStudents => {
-          const remaining = prevStudents.filter(s => !studentIds.includes(s.id));
-          return [...remaining];
-      });
-      showNotification('تم حذف الطالب بنجاح');
-  };
-
-  const markRemainingStudentsAbsent = () => {
-      const teacherId = appState.currentUser.id || 'unknown';
-      const teacherName = appState.currentUser.name || 'المعلم';
-      const todayString = new Date().toDateString(); // Robust date comparison
-
-      let count = 0;
-
-      // Calculate logic first
-      const studentsToMarkIds: string[] = [];
+  
+  const handleParentLogin = (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      if (!parentSelectedTeacher) { setLoginError('يرجى اختيار المعلم أولاً'); return; } 
       
-      students.forEach(student => {
-          if (student.teacherId !== teacherId) return;
-          
-          const hasLogToday = student.logs.some(log => {
-              const logDate = new Date(log.date);
-              return logDate.toDateString() === todayString;
-          });
-
-          if (!hasLogToday) {
-              studentsToMarkIds.push(student.id);
+      const cleanCode = normalizeArabicNumbers(parentCodeInput.trim());
+      
+      // Strict check: Teacher + Code must match
+      const student = students.find(s => s.parentCode === cleanCode && s.teacherId === parentSelectedTeacher); 
+      
+      if (student) { 
+          if (student.parentPhone) { 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
+              setLoginError(''); 
+          } else { 
+              setPendingStudentId(student.id); 
+              setShowPhoneSetup(true); 
+              setLoginError(''); 
+          } 
+      } else { 
+          const codeExistsElsewhere = students.some(s => s.parentCode === cleanCode);
+          if (codeExistsElsewhere) {
+              setLoginError('كود الطالب صحيح ولكن المعلم المختار غير صحيح.');
+          } else {
+              setLoginError('كود الطالب غير صحيح. تأكد من الرقم وحاول مرة أخرى.'); 
           }
-      });
+      } 
+  };
+  
+  const handleCompleteParentProfile = (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      const cleanPhone = normalizeArabicNumbers(parentPhoneInput.trim());
+      if (!cleanPhone || cleanPhone.length < 10) { setLoginError('يرجى كتابة رقم هاتف صحيح'); return; } 
+      
+      if (pendingStudentId) { 
+          const student = students.find(s => s.id === pendingStudentId); 
+          if (student) { 
+              const newStudents = students.map(s => s.id === student.id ? { ...s, parentPhone: cleanPhone } : s); 
+              setStudents(newStudents); 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
+              setShowPhoneSetup(false); 
+              setPendingStudentId(null); 
+          } 
+      } 
+  };
+  
+  const handleAdminLogin = (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      const savedPass = localStorage.getItem('admin_password') || '456888'; 
+      if (adminPassword === savedPass) { 
+          setAppState(prev => ({ ...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }})); 
+          setLoginError(''); 
+      } else { 
+          setLoginError('كلمة المرور غير صحيحة'); 
+      } 
+  };
+  
+  const handleLogout = () => { 
+      setAppState(prev => ({ ...prev, currentUser: { role: 'GUEST' } })); 
+      setLoginView('SELECTION');
+      setParentCodeInput(''); 
+      setParentPhoneInput(''); 
+      setLoginError(''); 
+      setSelectedTeacherId(''); 
+      setTeacherCodeInput(''); 
+      setAdminPassword(''); 
+      setShowPhoneSetup(false); 
+  };
 
-      if (studentsToMarkIds.length === 0) {
-          showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success');
-          return;
-      }
+  // --- DATA OPERATIONS ---
+  const updateStudent = (updatedStudent: Student) => { const newStudents = students.map(s => s.id === updatedStudent.id ? updatedStudent : s); setStudents(newStudents); };
+  const deleteStudents = (studentIds: string[]) => { setStudents(prevStudents => { const remaining = prevStudents.filter(s => !studentIds.includes(s.id)); return [...remaining]; }); showNotification('تم حذف الطالب بنجاح'); };
+  
+  const markRemainingStudentsAbsent = () => { 
+    const teacherId = appState.currentUser.id || 'unknown'; 
+    const teacherName = appState.currentUser.name || 'المعلم'; 
+    const todayString = new Date().toDateString(); 
+    let count = 0; 
+    const studentsToMarkIds: string[] = []; 
+    
+    // Check logs properly
+    students.forEach(student => { 
+        if (student.teacherId !== teacherId) return; 
+        const hasLogToday = student.logs.some(log => new Date(log.date).toDateString() === todayString); 
+        if (!hasLogToday) { 
+            studentsToMarkIds.push(student.id); 
+        } 
+    }); 
+    
+    if (studentsToMarkIds.length === 0) { 
+        showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success'); 
+        return; 
+    } 
+    
+    if (!window.confirm(`سيتم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب لم يسجلوا اليوم. هل أنت متأكد؟`)) { 
+        return; 
+    } 
+    
+    setStudents(prevStudents => { 
+        return prevStudents.map(student => { 
+            if (studentsToMarkIds.includes(student.id)) { 
+                count++; 
+                const absentLog: DailyLog = { 
+                    id: 'absent_' + Date.now() + Math.random(), 
+                    date: new Date().toISOString(), 
+                    teacherId, 
+                    teacherName, 
+                    seenByParent: false, 
+                    isAbsent: true, 
+                    notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.' 
+                }; 
+                return { ...student, logs: [absentLog, ...student.logs] }; 
+            } 
+            return student; 
+        }); 
+    }); 
+    showNotification(`تم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب بنجاح`, 'success'); 
+  };
 
-      if (!window.confirm(`سيتم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب. هل أنت متأكد؟`)) {
-          return;
-      }
+  const addStudent = (name: string, code: string) => { const newStudent: Student = { id: 's_' + Date.now() + Math.random(), teacherId: appState.currentUser.id || 't1', name: name, parentCode: code, weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, events: [] })), payments: [], logs: [] }; setStudents([newStudent, ...students]); return newStudent; };
+  const addTeacher = (name: string, loginCode: string) => { const newTeacher: Teacher = { id: 't_' + Date.now(), name, loginCode }; setTeachers(prev => [...prev, newTeacher]); showNotification('تم إضافة المحفظ بنجاح'); };
+  const updateTeacher = (id: string, name: string, loginCode: string) => { setTeachers(prev => prev.map(t => t.id === id ? { ...t, name, loginCode } : t )); showNotification('تم تعديل بيانات المحفظ بنجاح'); };
+  const deleteTeacher = (id: string) => { setTeachers(prevTeachers => { const remaining = prevTeachers.filter(t => t.id !== id); return [...remaining]; }); showNotification('تم حذف المحفظ بنجاح'); };
+  const markLogsAsSeen = (studentId: string, logIds: string[]) => { const studentIndex = students.findIndex(s => s.id === studentId); if (studentIndex === -1) return; const student = students[studentIndex]; const studentLogs = student.logs.map(log => { if (logIds.includes(log.id)) { return { ...log, seenByParent: true, seenAt: new Date().toISOString() }; } return log; }); const updatedStudent = { ...student, logs: studentLogs }; updateStudent(updatedStudent); showNotification('تم تأكيد الاطلاع', 'success'); };
+  const addAnnouncement = (ann: Announcement) => { setAnnouncements(prev => [ann, ...prev]); };
+  const deleteAnnouncement = (id: string) => { setAnnouncements(prev => prev.filter(a => a.id !== id)); showNotification('تم حذف الإعلان'); };
 
-      // Perform update
-      setStudents(prevStudents => {
-          return prevStudents.map(student => {
-              if (studentsToMarkIds.includes(student.id)) {
-                  count++;
-                  const absentLog: DailyLog = {
-                      id: 'absent_' + Date.now() + Math.random(),
-                      date: new Date().toISOString(),
+  const handlePublishAdab = (title: string, quizzes: QuizItem[]) => {
+      const teacherId = appState.currentUser.id;
+      const teacherName = appState.currentUser.name || 'المعلم';
+      if (!teacherId) return;
+
+      const todayIso = new Date().toISOString();
+      const todayDateStr = new Date().toDateString();
+
+      // 1. Create General Announcement
+      const newAnnouncement: Announcement = {
+          id: 'ann_' + Date.now(),
+          teacherId,
+          teacherName,
+          content: `***${title}\nيرجى من ولي الأمر مشاركة الطالب في حل أسئلة يوم الآداب الآن!`,
+          date: todayIso,
+          type: 'GENERAL'
+      };
+      addAnnouncement(newAnnouncement);
+      
+      // 2. Update Students Logs
+      setStudents(prevStudents => prevStudents.map(s => {
+          if (s.teacherId === teacherId) {
+              const existingLogIndex = s.logs.findIndex(l => new Date(l.date).toDateString() === todayDateStr);
+              
+              // New Adab Session Data
+              const adabSessionData = {
+                  title: title,
+                  quizzes: quizzes 
+              };
+
+              // If log exists for today, UPDATE it to include Adab
+              if (existingLogIndex >= 0) {
+                  const updatedLogs = [...s.logs];
+                  updatedLogs[existingLogIndex] = {
+                      ...updatedLogs[existingLogIndex],
+                      isAdab: true, // Mark as Adab day even if attendance was present
+                      adabSession: adabSessionData,
+                      // We do NOT reset seenByParent to false if it was true, to avoid annoyance, 
+                      // BUT for Adab we want them to see the quiz. 
+                      // Let's rely on the "Active Quiz" card in ParentDashboard appearing if parentQuizScore is undefined.
+                  };
+                  return { ...s, logs: updatedLogs };
+              } else {
+                  // Create NEW log
+                  const newLog: DailyLog = {
+                      id: 'adab_' + Date.now() + Math.random(),
+                      date: todayIso,
                       teacherId,
                       teacherName,
+                      isAbsent: false,
+                      isAdab: true,
+                      adabSession: adabSessionData,
                       seenByParent: false,
-                      isAbsent: true,
-                      notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.'
+                      notes: ""
                   };
-                  return { ...student, logs: [absentLog, ...student.logs] };
+                  return { ...s, logs: [newLog, ...s.logs] };
               }
-              return student;
-          });
-      });
-
-      // Show success message with notification
-      showNotification(`تم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب بنجاح`, 'success');
+          }
+          return s;
+      }));
+      showNotification('تم نشر درس الآداب وتحديث سجلات الطلاب', 'success');
   };
 
-  const addStudent = (name: string) => {
-      let newCode = '';
-      let isUnique = false;
-      while (!isUnique) {
-          newCode = Math.floor(1000 + Math.random() * 9000).toString();
-          if (!students.find(s => s.parentCode === newCode)) isUnique = true;
+  const handleQuickAnnouncement = (type: 'ADAB' | 'HOLIDAY', payload?: any) => {
+      const teacherId = appState.currentUser.id;
+      const teacherName = appState.currentUser.name || 'المعلم';
+      if (!teacherId) return;
+
+      let content = "";
+      if (type === 'ADAB') {
+          content = `***${payload?.title || "يوم الآداب الرائع"}\nتأكد من حضور ابنك اليوم حتى لا يقل في اختبار الشهر`;
+      } else {
+          content = "🎉 تنبيه هام: غداً إجازة رسمية للحلقة.";
       }
 
-      const newStudent: Student = {
-          id: 's_' + Date.now() + Math.random(),
-          teacherId: appState.currentUser.id || 't1', 
-          name: name,
-          parentCode: newCode,
-          weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, expectedTime: '', isActive: true })),
-          payments: [],
-          logs: []
+      const newAnnouncement: Announcement = {
+          id: 'ann_' + Date.now(),
+          teacherId,
+          teacherName,
+          content,
+          date: new Date().toISOString(),
+          type: 'GENERAL'
       };
-
-      setStudents([newStudent, ...students]);
-      return newStudent;
-  };
-
-  const addTeacher = (name: string, loginCode: string) => {
-      const newTeacher: Teacher = {
-          id: 't_' + Date.now(),
-          name,
-          loginCode
-      };
-      setTeachers(prev => [...prev, newTeacher]);
-      showNotification('تم إضافة المحفظ بنجاح');
-  };
-
-  const updateTeacher = (id: string, name: string, loginCode: string) => {
-      setTeachers(prev => prev.map(t => 
-          t.id === id ? { ...t, name, loginCode } : t
-      ));
-      showNotification('تم تعديل بيانات المحفظ بنجاح');
-  };
-
-  const deleteTeacher = (id: string) => {
-      setTeachers(prevTeachers => {
-          const remaining = prevTeachers.filter(t => t.id !== id);
-          return [...remaining];
-      });
-      showNotification('تم حذف المحفظ بنجاح');
-  };
-
-  const markLogsAsSeen = (studentId: string, logIds: string[]) => {
-    const studentIndex = students.findIndex(s => s.id === studentId);
-    if (studentIndex === -1) return;
-
-    const student = students[studentIndex];
-    const updatedLogs = student.logs.map(log => {
-        if (logIds.includes(log.id)) {
-            return { ...log, seenByParent: true, seenAt: new Date().toISOString() };
-        }
-        return log;
-    });
-
-    const updatedStudent = { ...student, logs: updatedLogs };
-    updateStudent(updatedStudent);
-    showNotification('تم تأكيد الاطلاع', 'success');
-  };
-
-  const addAnnouncement = (ann: Announcement) => {
-      setAnnouncements(prev => [ann, ...prev]);
-  };
-
-  const deleteAnnouncement = (id: string) => {
-      setAnnouncements(prev => prev.filter(a => a.id !== id));
-      showNotification('تم حذف الإعلان');
+      
+      addAnnouncement(newAnnouncement);
+      
+      if (type === 'ADAB') {
+          // Legacy support if needed, but onPublishAdab handles the new quiz flow
+      } else {
+          showNotification('تم إرسال تنبيه الإجازة', 'success');
+      }
   };
 
   return (
       <>
-        {/* Offline Status Bar */}
         {!isOnline && (
             <div className="bg-gray-800 text-white text-center text-sm p-1 fixed top-0 left-0 right-0 z-[110]">
                 📡 وضع عدم الاتصال: البيانات تحفظ محلياً
             </div>
         )}
 
-        {/* Notification Toast */}
         {notification && (
             <NotificationToast 
                 message={notification.message} 
@@ -407,30 +379,15 @@ const App: React.FC = () => {
             />
         )}
 
-        {updateAvailable && (
-            <div className="fixed top-8 left-0 right-0 bg-gradient-to-r from-emerald-600 to-teal-500 text-white p-3 text-center z-50 shadow-lg flex justify-between items-center px-4 animate-slide-down">
-                <div>
-                    <span className="font-bold">تحديث جديد متوفر!</span>
-                    <span className="text-sm opacity-90 mr-2">أغلق التطبيق وافتحه مرة أخرى.</span>
-                </div>
-                <button 
-                    onClick={() => setUpdateAvailable(false)} 
-                    className="bg-white/20 px-3 py-1 rounded hover:bg-white/30"
-                >
-                    حسناً
-                </button>
-            </div>
-        )}
-
         {appState.currentUser.role === 'ADMIN' ? (
             <AdminDashboard 
                 teachers={teachers}
+                students={students}
                 onAddTeacher={addTeacher}
                 onUpdateTeacher={updateTeacher}
                 onDeleteTeacher={deleteTeacher}
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
-                // Organization Name Props
                 organizationName={organizationName}
                 onUpdateOrganizationName={setOrganizationName}
             />
@@ -448,6 +405,8 @@ const App: React.FC = () => {
                 onDeleteAnnouncement={deleteAnnouncement}
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
+                onPublishAdab={handlePublishAdab}
+                onQuickAnnouncement={handleQuickAnnouncement}
             />
         ) : appState.currentUser.role === 'PARENT' ? (
              <ParentDashboard 
@@ -464,25 +423,60 @@ const App: React.FC = () => {
 
                 {!showPhoneSetup ? (
                     <>
-                        {/* Tab Switcher */}
-                        <div className="flex mb-6 bg-gray-100 p-1 rounded-lg">
-                            <button 
-                                onClick={() => { setActiveLoginTab('PARENT'); setLoginError(''); }}
-                                className={`flex-1 py-2 rounded-md font-bold text-sm transition ${activeLoginTab === 'PARENT' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}
-                            >
-                                ولي الأمر
-                            </button>
-                            <button 
-                                onClick={() => { setActiveLoginTab('TEACHER'); setLoginError(''); }}
-                                className={`flex-1 py-2 rounded-md font-bold text-sm transition ${activeLoginTab === 'TEACHER' ? 'bg-white shadow text-emerald-700' : 'text-gray-500'}`}
-                            >
-                                المعلم
-                            </button>
-                        </div>
+                        {/* MAIN SELECTION VIEW */}
+                        {loginView === 'SELECTION' && (
+                            <div className="space-y-4 animate-fade-in">
+                                <button 
+                                    onClick={() => { setLoginView('PARENT'); setLoginError(''); }}
+                                    className="w-full bg-white hover:bg-emerald-50 border-2 border-emerald-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group"
+                                >
+                                    <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-emerald-200 transition">👨‍👩‍👧‍👦</div>
+                                    <div className="text-right">
+                                        <h3 className="font-bold text-lg text-emerald-900">دخول ولي الأمر</h3>
+                                        <p className="text-sm text-gray-500">تابع تقدم ابنك وتواصل مع المعلم</p>
+                                    </div>
+                                    <span className="mr-auto text-emerald-300 text-xl group-hover:text-emerald-500">⬅</span>
+                                </button>
 
+                                <button 
+                                    onClick={() => { setLoginView('TEACHER'); setLoginError(''); }}
+                                    className="w-full bg-white hover:bg-blue-50 border-2 border-blue-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group"
+                                >
+                                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-blue-200 transition">👳‍♂️</div>
+                                    <div className="text-right">
+                                        <h3 className="font-bold text-lg text-blue-900">دخول المعلم</h3>
+                                        <p className="text-sm text-gray-500">إدارة الحلقة وتسجيل الطلاب</p>
+                                    </div>
+                                    <span className="mr-auto text-blue-300 text-xl group-hover:text-blue-500">⬅</span>
+                                </button>
+                                
+                                <div className="mt-8 text-center pt-4 border-t border-gray-100">
+                                    <button onClick={() => setLoginView('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">
+                                        🔐 دخول المسؤول (المبرمج)
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* LOGIN FORMS */}
                         <div className="space-y-8">
-                        {activeLoginTab === 'PARENT' && (
-                            <form onSubmit={handleParentLogin} className="space-y-4 animate-fade-in">
+                        {loginView === 'PARENT' && (
+                            <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative">
+                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-emerald-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
+                                <h3 className="text-center font-bold text-emerald-800 text-lg mb-4">تسجيل دخول ولي الأمر</h3>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-1">اختر اسم المعلم (الشيخ)</label>
+                                    <select 
+                                    className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                    value={parentSelectedTeacher}
+                                    onChange={(e) => setParentSelectedTeacher(e.target.value)}
+                                    >
+                                    <option value="">-- اختر الاسم --</option>
+                                    {teachers.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                    </select>
+                                </div>
                                 <div>
                                 <label className="block text-sm font-medium text-gray-600 mb-1">كود الطالب</label>
                                 <input 
@@ -493,13 +487,15 @@ const App: React.FC = () => {
                                     onChange={(e) => setParentCodeInput(e.target.value)}
                                 />
                                 </div>
-                                {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
-                                <Button type="submit" className="w-full text-lg">دخول ولي الأمر</Button>
+                                {loginError && <p className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{loginError}</p>}
+                                <Button type="submit" className="w-full text-lg">دخول</Button>
                             </form>
                         )}
 
-                        {activeLoginTab === 'TEACHER' && (
-                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-fade-in">
+                        {loginView === 'TEACHER' && (
+                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative">
+                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-blue-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
+                                <h3 className="text-center font-bold text-blue-800 text-lg mb-4">تسجيل دخول المعلم</h3>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-600 mb-1 text-center">اختر اسم المعلم</label>
                                     <select 
@@ -523,15 +519,16 @@ const App: React.FC = () => {
                                         placeholder="******"
                                     />
                                 </div>
-                                {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
+                                {loginError && <p className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{loginError}</p>}
                                 <Button variant="secondary" type="submit" className="w-full" disabled={!selectedTeacherId}>
-                                    دخول المعلم
+                                    دخول
                                 </Button>
                             </form>
                         )}
 
-                        {activeLoginTab === 'ADMIN' && (
-                            <form onSubmit={handleAdminLogin} className="space-y-4 animate-fade-in border-t pt-4 mt-4">
+                        {loginView === 'ADMIN' && (
+                            <form onSubmit={handleAdminLogin} className="space-y-4 animate-slide-up relative border-t pt-4 mt-4">
+                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-10 right-0 text-gray-500 hover:text-gray-800 font-bold text-xs bg-gray-100 px-2 py-1 rounded">إلغاء</button>
                                 <h3 className="text-center font-bold text-gray-700">دخول المبرمج</h3>
                                 <input 
                                     type="password"
@@ -580,14 +577,6 @@ const App: React.FC = () => {
                     <div className="mt-6 text-center bg-gray-50 p-3 rounded-lg border border-gray-200">
                         <p className="text-xs text-gray-600 font-bold mb-1">لتثبيت التطبيق على الآيفون:</p>
                         <p className="text-xs text-gray-500">اضغط على زر المشاركة <span className="text-lg">⎋</span> ثم اختر "Add to Home Screen" (إضافة للشاشة الرئيسية)</p>
-                    </div>
-                )}
-
-                {!showPhoneSetup && activeLoginTab !== 'ADMIN' && (
-                    <div className="mt-8 text-center">
-                        <button onClick={() => setActiveLoginTab('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600">
-                            دخول المسؤول (المبرمج)
-                        </button>
                     </div>
                 )}
             </div>
