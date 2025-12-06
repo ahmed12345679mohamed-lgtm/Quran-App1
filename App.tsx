@@ -1,28 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student, AppState, Teacher, DailyLog, Announcement, QuizItem, Payment } from './types';
-import { DAYS_OF_WEEK, APP_VERSION } from './constants';
+import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem } from './types';
+import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from './constants';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ParentDashboard } from './components/ParentDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Button } from './components/Button';
-import { db } from './firebaseConfig';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  getDocs, 
-  writeBatch,
-  serverTimestamp,
-  orderBy
-} from 'firebase/firestore';
 
-// Logo Component
+// Logo Component with Dynamic Title
 const Logo = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center mb-8">
     <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center text-4xl shadow-lg mb-4 border-4 border-white animate-bounce-in">
@@ -35,7 +20,9 @@ const Logo = ({ title }: { title: string }) => (
 
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
   useEffect(() => {
-    const timer = setTimeout(() => onClose(), 3000);
+    const timer = setTimeout(() => {
+      onClose();
+    }, 3000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
@@ -54,119 +41,82 @@ const normalizeArabicNumbers = (str: string) => {
 };
 
 const App: React.FC = () => {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  
-  const [organizationName, setOrganizationName] = useState(() => localStorage.getItem('muhaffiz_org_name') || "دار التوحيد");
-  
-  // App State
-  const [appState, setAppState] = useState<AppState>({ 
-    students: [], 
-    teachers: [], 
-    announcements: [], 
-    currentUser: { role: 'GUEST' } 
+  // --- DATA LOADING & STATE ---
+  // RESET TO CLASSIC VERSION v100
+  const [students, setStudents] = useState<Student[]>(() => {
+    const saved = localStorage.getItem('muhaffiz_students_v100');
+    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
   });
 
-  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
-  const showNotification = (message: string, type: 'success' | 'error' = 'success') => setNotification({ message, type });
+  const [teachers, setTeachers] = useState<Teacher[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_teachers_v100');
+      return saved ? JSON.parse(saved) : INITIAL_TEACHERS;
+  });
 
-  // --- FIRESTORE SUBSCRIPTIONS ---
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_announcements_v100');
+      return saved ? JSON.parse(saved) : [];
+  });
 
-  // 1. Fetch Global Data (Teachers, Announcements)
+  const [organizationName, setOrganizationName] = useState(() => {
+      return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
+  });
+
   useEffect(() => {
-    // Teachers Listener
-    const unsubTeachers = onSnapshot(collection(db, 'teachers'), (snapshot) => {
-      const ts = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Teacher));
-      setTeachers(ts);
-    });
+      localStorage.setItem('muhaffiz_org_name', organizationName);
+      document.title = `${organizationName} - متابعة القرآن الكريم`;
+  }, [organizationName]);
 
-    // Announcements Listener
-    const qAnnouncements = query(collection(db, 'announcements'), orderBy('date', 'desc'));
-    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
-      const anns = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Announcement));
-      setAnnouncements(anns);
-    });
+  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-    return () => {
-      unsubTeachers();
-      unsubAnnouncements();
-    };
+  const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotification({ message, type });
+  };
+
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  useEffect(() => {
+      const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+      return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // 2. Fetch Students based on Role
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isIOS, setIsIOS] = useState(false);
+
   useEffect(() => {
-    setStudents([]); // Clear on role switch
-    
-    if (appState.currentUser.role === 'GUEST') return;
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+    const handler = (e: any) => { e.preventDefault(); setDeferredPrompt(e); };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
-    let q;
-    if (appState.currentUser.role === 'ADMIN') {
-        q = query(collection(db, 'students'));
-    } else if (appState.currentUser.role === 'TEACHER' && appState.currentUser.id) {
-        q = query(collection(db, 'students'), where('teacherId', '==', appState.currentUser.id));
-    } else if (appState.currentUser.role === 'PARENT' && appState.currentUser.id) {
-        q = query(collection(db, 'students'), where('__name__', '==', appState.currentUser.id));
-    }
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') { setDeferredPrompt(null); }
+  };
 
-    if (!q) return;
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
-    const unsubStudents = onSnapshot(q, (snapshot) => {
-        const fetchedStudents = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data(),
-            logs: [], // Initialize empty, filled by subcollection listener
-            payments: []
-        } as Student));
-
-        setStudents(prev => {
-            // Simple merge strategy: If student exists in prev, keep their logs/payments to prevent flash
-            // until sub-listener updates
-            return fetchedStudents.map(newS => {
-                const existing = prev.find(p => p.id === newS.id);
-                if (existing) {
-                    return { ...newS, logs: existing.logs, payments: existing.payments };
-                }
-                return newS;
-            });
-        });
-    });
-
-    return () => unsubStudents();
-  }, [appState.currentUser.role, appState.currentUser.id]);
-
-  // 3. Fetch Logs/Subcollections for Loaded Students
   useEffect(() => {
-    const unsubscribers: (() => void)[] = [];
+    const storedVersion = localStorage.getItem('app_version');
+    if (storedVersion && storedVersion !== APP_VERSION) { setUpdateAvailable(true); }
+    localStorage.setItem('app_version', APP_VERSION);
+  }, []);
 
-    students.forEach(student => {
-       // Listen to Logs
-       const logsQuery = query(collection(db, `students/${student.id}/logs`), orderBy('date', 'desc'));
-       const unsubLogs = onSnapshot(logsQuery, (snapshot) => {
-           const logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as DailyLog));
-           setStudents(prev => prev.map(s => s.id === student.id ? { ...s, logs } : s));
-       });
-       unsubscribers.push(unsubLogs);
+  useEffect(() => { localStorage.setItem('muhaffiz_students_v100', JSON.stringify(students)); }, [students]);
+  useEffect(() => { localStorage.setItem('muhaffiz_teachers_v100', JSON.stringify(teachers)); }, [teachers]);
+  useEffect(() => { localStorage.setItem('muhaffiz_announcements_v100', JSON.stringify(announcements)); }, [announcements]);
 
-       // Listen to Payments
-       const payQuery = query(collection(db, `students/${student.id}/payments`), orderBy('date', 'desc'));
-       const unsubPay = onSnapshot(payQuery, (snapshot) => {
-           const payments = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
-           setStudents(prev => prev.map(s => s.id === student.id ? { ...s, payments } : s));
-       });
-       unsubscribers.push(unsubPay);
-    });
-
-    return () => {
-        unsubscribers.forEach(u => u());
-    };
-    // Re-run only if student IDs list changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students.map(s => s.id).join(',')]); 
-
+  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, currentUser: { role: 'GUEST' } });
 
   // --- LOGIN & NAVIGATION STATE ---
   const [loginView, setLoginView] = useState<'SELECTION' | 'PARENT' | 'TEACHER' | 'ADMIN'>('SELECTION');
+  
   const [parentCodeInput, setParentCodeInput] = useState('');
   const [parentPhoneInput, setParentPhoneInput] = useState('');
   const [parentSelectedTeacher, setParentSelectedTeacher] = useState('');
@@ -194,50 +144,48 @@ const App: React.FC = () => {
       } 
   };
   
-  const handleParentLogin = async (e: React.FormEvent) => { 
+  const handleParentLogin = (e: React.FormEvent) => { 
       e.preventDefault(); 
       if (!parentSelectedTeacher) { setLoginError('يرجى اختيار المعلم أولاً'); return; } 
       
       const cleanCode = normalizeArabicNumbers(parentCodeInput.trim());
-      setLoginError('جاري البحث...');
-
-      // Query Firestore for student
-      const q = query(
-          collection(db, 'students'), 
-          where('parentCode', '==', cleanCode),
-          where('teacherId', '==', parentSelectedTeacher)
-      );
       
-      const querySnapshot = await getDocs(q);
-
-      if (!querySnapshot.empty) {
-          const docSnap = querySnapshot.docs[0];
-          const studentData = docSnap.data() as Student;
-          const studentId = docSnap.id;
-
-          if (studentData.parentPhone) { 
-              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: studentId, name: studentData.name } })); 
+      // Strict check: Teacher + Code must match
+      const student = students.find(s => s.parentCode === cleanCode && s.teacherId === parentSelectedTeacher); 
+      
+      if (student) { 
+          if (student.parentPhone) { 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
               setLoginError(''); 
           } else { 
-              setPendingStudentId(studentId); 
+              setPendingStudentId(student.id); 
               setShowPhoneSetup(true); 
               setLoginError(''); 
           } 
-      } else {
-          setLoginError('كود الطالب غير صحيح أو لا يتبع هذا المعلم.');
-      }
+      } else { 
+          const codeExistsElsewhere = students.some(s => s.parentCode === cleanCode);
+          if (codeExistsElsewhere) {
+              setLoginError('كود الطالب صحيح ولكن المعلم المختار غير صحيح.');
+          } else {
+              setLoginError('كود الطالب غير صحيح. تأكد من الرقم وحاول مرة أخرى.'); 
+          }
+      } 
   };
   
-  const handleCompleteParentProfile = async (e: React.FormEvent) => { 
+  const handleCompleteParentProfile = (e: React.FormEvent) => { 
       e.preventDefault(); 
       const cleanPhone = normalizeArabicNumbers(parentPhoneInput.trim());
       if (!cleanPhone || cleanPhone.length < 10) { setLoginError('يرجى كتابة رقم هاتف صحيح'); return; } 
       
-      if (pendingStudentId) {
-          await updateDoc(doc(db, 'students', pendingStudentId), { parentPhone: cleanPhone });
-          setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: pendingStudentId, name: "ولي الأمر" } })); 
-          setShowPhoneSetup(false); 
-          setPendingStudentId(null); 
+      if (pendingStudentId) { 
+          const student = students.find(s => s.id === pendingStudentId); 
+          if (student) { 
+              const newStudents = students.map(s => s.id === student.id ? { ...s, parentPhone: cleanPhone } : s); 
+              setStudents(newStudents); 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
+              setShowPhoneSetup(false); 
+              setPendingStudentId(null); 
+          } 
       } 
   };
   
@@ -262,193 +210,173 @@ const App: React.FC = () => {
       setTeacherCodeInput(''); 
       setAdminPassword(''); 
       setShowPhoneSetup(false); 
-      setStudents([]); 
   };
 
-  // --- ACTIONS (FIRESTORE) ---
-
-  const handleSaveLog = async (studentId: string, log: DailyLog, nextPlan?: any) => {
-      // 1. Add Log to Subcollection
-      // Remove 'id' from log object to let Firestore generate one, or use the placeholder
-      const { id, ...logData } = log;
-      await addDoc(collection(db, `students/${studentId}/logs`), logData);
-
-      // 2. Update Student Next Plan
-      if (nextPlan) {
-          await updateDoc(doc(db, 'students', studentId), { nextPlan });
-      }
-      showNotification('تم حفظ السجل بنجاح');
-  };
-
-  const handleAddPayment = async (studentId: string, payment: Payment) => {
-      const { id, ...payData } = payment;
-      await addDoc(collection(db, `students/${studentId}/payments`), payData);
-      showNotification('تم تسجيل الدفع بنجاح');
-  };
-
-  const handleGenericStudentUpdate = async (student: Student) => {
-     // Strip subcollections before saving to the student doc to avoid overwriting or bloating
-     const { logs, payments, id, ...data } = student as any;
-     await updateDoc(doc(db, 'students', id), data);
-  };
-
-  const deleteStudents = async (studentIds: string[]) => {
-      if (!window.confirm("هل أنت متأكد من حذف هؤلاء الطلاب؟ لا يمكن التراجع.")) return;
-      const batch = writeBatch(db);
-      studentIds.forEach(id => {
-          batch.delete(doc(db, 'students', id));
-      });
-      await batch.commit();
-      showNotification('تم حذف الطلاب بنجاح');
-  };
+  // --- DATA OPERATIONS ---
+  const updateStudent = (updatedStudent: Student) => { const newStudents = students.map(s => s.id === updatedStudent.id ? updatedStudent : s); setStudents(newStudents); };
+  const deleteStudents = (studentIds: string[]) => { setStudents(prevStudents => { const remaining = prevStudents.filter(s => !studentIds.includes(s.id)); return [...remaining]; }); showNotification('تم حذف الطالب بنجاح'); };
   
-  const markRemainingStudentsAbsent = async (specificIds?: string[]) => { 
+  const markRemainingStudentsAbsent = (specificIds?: string[]) => { 
     const teacherId = appState.currentUser.id || 'unknown'; 
     const teacherName = appState.currentUser.name || 'المعلم'; 
+    const todayString = new Date().toDateString(); 
     
-    const todayString = new Date().toDateString();
-    let targetIds = specificIds || [];
+    // Determine IDs to mark
+    // If specificIds is passed (explicit action), use it.
+    // Otherwise, auto-calculate absent students for the current teacher.
+    let idsToMark = specificIds;
 
-    if (targetIds.length === 0 && !specificIds) {
-        // Auto-detect
-        students.forEach(s => {
-            if (s.teacherId === teacherId) {
-                const hasLog = s.logs.some(l => new Date(l.date).toDateString() === todayString);
-                if (!hasLog) targetIds.push(s.id);
-            }
+    if (!idsToMark) {
+        idsToMark = [];
+        students.forEach(student => { 
+            if (student.teacherId !== teacherId) return; 
+            const hasLogToday = student.logs.some(log => new Date(log.date).toDateString() === todayString); 
+            if (!hasLogToday) { 
+                idsToMark!.push(student.id); 
+            } 
         });
     }
-
-    if (targetIds.length === 0) { 
-        showNotification("تم تسجيل جميع الطلاب بالفعل.", 'success'); 
+    
+    if (idsToMark.length === 0) { 
+        showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success'); 
         return; 
     } 
     
-    if (!specificIds && !window.confirm(`سيتم تسجيل الغياب لـ ${targetIds.length} طالب. تأكيد؟`)) return;
-
-    const batch = writeBatch(db);
-    targetIds.forEach(sid => {
-        const newLogRef = doc(collection(db, `students/${sid}/logs`));
-        const log = { 
-            date: new Date().toISOString(), 
-            teacherId, 
-            teacherName, 
-            seenByParent: false, 
-            isAbsent: true, 
-            notes: 'تم تسجيل الغياب تلقائياً.' 
-        };
-        batch.set(newLogRef, log);
-    });
+    // Only ask for confirmation if this was an AUTO action (no specific IDs passed).
+    // If specific IDs were passed, the user likely clicked a confirmation button in the UI already.
+    if (!specificIds && !window.confirm(`سيتم تسجيل الغياب لـ ${idsToMark.length} طالب لم يسجلوا اليوم. هل أنت متأكد؟`)) { 
+        return; 
+    } 
     
-    await batch.commit();
-    showNotification(`تم تسجيل الغياب لـ ${targetIds.length} طالب`, 'success'); 
+    setStudents(prevStudents => { 
+        return prevStudents.map(student => { 
+            if (idsToMark!.includes(student.id)) { 
+                const absentLog: DailyLog = { 
+                    id: 'absent_' + Date.now() + Math.random(), 
+                    date: new Date().toISOString(), 
+                    teacherId, 
+                    teacherName, 
+                    seenByParent: false, 
+                    isAbsent: true, 
+                    notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.' 
+                }; 
+                return { ...student, logs: [absentLog, ...student.logs] }; 
+            } 
+            return student; 
+        }); 
+    }); 
+    showNotification(`تم تسجيل الغياب لـ ${idsToMark.length} طالب بنجاح`, 'success'); 
   };
 
-  const addStudent = async (name: string, code: string) => { 
-      const teacherId = appState.currentUser.id || 't1';
-      const newStudentData = {
-          name, 
-          parentCode: code, 
-          teacherId,
-          weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, events: [] })),
-          createdAt: serverTimestamp()
-      };
-      const ref = await addDoc(collection(db, 'students'), newStudentData);
-      return { id: ref.id, ...newStudentData, logs: [], payments: [] } as Student; 
-  };
+  const addStudent = (name: string, code: string) => { const newStudent: Student = { id: 's_' + Date.now() + Math.random(), teacherId: appState.currentUser.id || 't1', name: name, parentCode: code, weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, events: [] })), payments: [], logs: [] }; setStudents([newStudent, ...students]); return newStudent; };
+  const addTeacher = (name: string, loginCode: string) => { const newTeacher: Teacher = { id: 't_' + Date.now(), name, loginCode }; setTeachers(prev => [...prev, newTeacher]); showNotification('تم إضافة المحفظ بنجاح'); };
+  const updateTeacher = (id: string, name: string, loginCode: string) => { setTeachers(prev => prev.map(t => t.id === id ? { ...t, name, loginCode } : t )); showNotification('تم تعديل بيانات المحفظ بنجاح'); };
+  const deleteTeacher = (id: string) => { setTeachers(prevTeachers => { const remaining = prevTeachers.filter(t => t.id !== id); return [...remaining]; }); showNotification('تم حذف المحفظ بنجاح'); };
+  const markLogsAsSeen = (studentId: string, logIds: string[]) => { const studentIndex = students.findIndex(s => s.id === studentId); if (studentIndex === -1) return; const student = students[studentIndex]; const studentLogs = student.logs.map(log => { if (logIds.includes(log.id)) { return { ...log, seenByParent: true, seenAt: new Date().toISOString() }; } return log; }); const updatedStudent = { ...student, logs: studentLogs }; updateStudent(updatedStudent); showNotification('تم تأكيد الاطلاع', 'success'); };
+  const addAnnouncement = (ann: Announcement) => { setAnnouncements(prev => [ann, ...prev]); };
+  const deleteAnnouncement = (id: string) => { setAnnouncements(prev => prev.filter(a => a.id !== id)); showNotification('تم حذف الإعلان'); };
 
-  const addTeacher = async (name: string, loginCode: string) => { 
-      await addDoc(collection(db, 'teachers'), { name, loginCode });
-      showNotification('تم إضافة المحفظ'); 
-  };
-  const updateTeacher = async (id: string, name: string, loginCode: string) => { 
-      await updateDoc(doc(db, 'teachers', id), { name, loginCode });
-      showNotification('تم التعديل'); 
-  };
-  const deleteTeacher = async (id: string) => { 
-      await deleteDoc(doc(db, 'teachers', id));
-      showNotification('تم الحذف'); 
-  };
-
-  const markLogsAsSeen = async (studentId: string, logIds: string[]) => {
-      const batch = writeBatch(db);
-      logIds.forEach(lid => {
-          const logRef = doc(db, `students/${studentId}/logs`, lid);
-          batch.update(logRef, { seenByParent: true, seenAt: new Date().toISOString() });
-      });
-      await batch.commit();
-      showNotification('تم تأكيد الاطلاع');
-  };
-
-  const addAnnouncement = async (ann: Announcement) => { 
-      const { id, ...data } = ann; 
-      await addDoc(collection(db, 'announcements'), data);
-  };
-  const deleteAnnouncement = async (id: string) => { 
-      await deleteDoc(doc(db, 'announcements', id));
-  };
-
-  const handlePublishAdab = async (title: string, quizzes: QuizItem[]) => {
+  const handlePublishAdab = (title: string, quizzes: QuizItem[]) => {
       const teacherId = appState.currentUser.id;
       const teacherName = appState.currentUser.name || 'المعلم';
       if (!teacherId) return;
 
       const todayIso = new Date().toISOString();
-      
-      // 1. Save Session to Firestore (for record)
-      await addDoc(collection(db, 'adab_sessions'), {
-          title, quizzes, date: todayIso, teacherId
-      });
+      const todayDateStr = new Date().toDateString();
 
-      // 2. Announce it
-      await addAnnouncement({
-          id: 'temp',
-          teacherId, teacherName, 
-          content: `***${title}\nيرجى المشاركة في يوم الآداب الآن!`,
+      // 1. Create General Announcement
+      const newAnnouncement: Announcement = {
+          id: 'ann_' + Date.now(),
+          teacherId,
+          teacherName,
+          content: `***${title}\nيرجى من ولي الأمر مشاركة الطالب في حل أسئلة يوم الآداب الآن!`,
           date: todayIso,
           type: 'GENERAL'
-      });
-
-      // 3. Create "Pending" Log for ALL students of this teacher
-      const batch = writeBatch(db);
-      students.forEach(s => {
+      };
+      addAnnouncement(newAnnouncement);
+      
+      // 2. Update Students Logs
+      setStudents(prevStudents => prevStudents.map(s => {
           if (s.teacherId === teacherId) {
-              const newLogRef = doc(collection(db, `students/${s.id}/logs`));
-              const log = {
-                  date: todayIso,
-                  teacherId,
-                  teacherName,
-                  isAbsent: false,
-                  isAdab: true,
-                  adabSession: { title, quizzes }, 
-                  seenByParent: false,
-                  notes: ""
+              const existingLogIndex = s.logs.findIndex(l => new Date(l.date).toDateString() === todayDateStr);
+              
+              // New Adab Session Data
+              const adabSessionData = {
+                  title: title,
+                  quizzes: quizzes 
               };
-              batch.set(newLogRef, log);
+
+              // If log exists for today, UPDATE it to include Adab
+              if (existingLogIndex >= 0) {
+                  const updatedLogs = [...s.logs];
+                  updatedLogs[existingLogIndex] = {
+                      ...updatedLogs[existingLogIndex],
+                      isAdab: true, // Mark as Adab day even if attendance was present
+                      adabSession: adabSessionData,
+                      // We do NOT reset seenByParent to false if it was true, to avoid annoyance, 
+                      // BUT for Adab we want them to see the quiz. 
+                      // Let's rely on the "Active Quiz" card in ParentDashboard appearing if parentQuizScore is undefined.
+                  };
+                  return { ...s, logs: updatedLogs };
+              } else {
+                  // Create NEW log
+                  const newLog: DailyLog = {
+                      id: 'adab_' + Date.now() + Math.random(),
+                      date: todayIso,
+                      teacherId,
+                      teacherName,
+                      isAbsent: false,
+                      isAdab: true,
+                      adabSession: adabSessionData,
+                      seenByParent: false,
+                      notes: ""
+                  };
+                  return { ...s, logs: [newLog, ...s.logs] };
+              }
           }
-      });
-      await batch.commit();
-      showNotification('تم نشر درس الآداب لجميع الطلاب', 'success');
+          return s;
+      }));
+      showNotification('تم نشر درس الآداب وتحديث سجلات الطلاب', 'success');
   };
 
   const handleQuickAnnouncement = (type: 'ADAB' | 'HOLIDAY', payload?: any) => {
-     if (type === 'ADAB') {
-        // Logic inside dashboard calls onPublishAdab usually
-     } else {
-         addAnnouncement({
-             id: 'temp',
-             teacherId: appState.currentUser.id || '',
-             teacherName: appState.currentUser.name || '',
-             content: "🎉 تنبيه هام: غداً إجازة رسمية للحلقة.",
-             date: new Date().toISOString(),
-             type: 'GENERAL'
-         });
-         showNotification('تم الإرسال');
-     }
+      const teacherId = appState.currentUser.id;
+      const teacherName = appState.currentUser.name || 'المعلم';
+      if (!teacherId) return;
+
+      let content = "";
+      if (type === 'ADAB') {
+          content = `***${payload?.title || "يوم الآداب الرائع"}\nتأكد من حضور ابنك اليوم حتى لا يقل في اختبار الشهر`;
+      } else {
+          content = "🎉 تنبيه هام: غداً إجازة رسمية للحلقة.";
+      }
+
+      const newAnnouncement: Announcement = {
+          id: 'ann_' + Date.now(),
+          teacherId,
+          teacherName,
+          content,
+          date: new Date().toISOString(),
+          type: 'GENERAL'
+      };
+      
+      addAnnouncement(newAnnouncement);
+      
+      if (type === 'ADAB') {
+          // Legacy support if needed, but onPublishAdab handles the new quiz flow
+      } else {
+          showNotification('تم إرسال تنبيه الإجازة', 'success');
+      }
   };
 
   return (
       <>
+        {!isOnline && (
+            <div className="bg-gray-800 text-white text-center text-sm p-1 fixed top-0 left-0 right-0 z-[110]">
+                📡 وضع عدم الاتصال: البيانات تحفظ محلياً
+            </div>
+        )}
+
         {notification && (
             <NotificationToast 
                 message={notification.message} 
@@ -467,7 +395,7 @@ const App: React.FC = () => {
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
                 organizationName={organizationName}
-                onUpdateOrganizationName={(n) => { setOrganizationName(n); localStorage.setItem('muhaffiz_org_name', n); }}
+                onUpdateOrganizationName={setOrganizationName}
             />
         ) : appState.currentUser.role === 'TEACHER' ? (
             <TeacherDashboard 
@@ -475,9 +403,7 @@ const App: React.FC = () => {
                 teacherId={appState.currentUser.id || 't1'}
                 students={students.filter(s => s.teacherId === appState.currentUser.id)}
                 announcements={announcements}
-                onUpdateStudent={handleGenericStudentUpdate}
-                onSaveLog={handleSaveLog} 
-                onAddPayment={handleAddPayment}
+                onUpdateStudent={updateStudent}
                 onAddStudent={addStudent}
                 onDeleteStudents={deleteStudents}
                 onMarkAbsences={markRemainingStudentsAbsent}
@@ -492,47 +418,81 @@ const App: React.FC = () => {
              <ParentDashboard 
                 student={students.find(s => s.id === appState.currentUser.id)!}
                 announcements={announcements}
-                onUpdateStudent={handleGenericStudentUpdate} 
+                onUpdateStudent={updateStudent}
                 onLogout={handleLogout}
                 onMarkSeen={markLogsAsSeen}
-                onSaveQuizResult={async (studentId, logId, score, max) => {
-                    await updateDoc(doc(db, `students/${studentId}/logs`, logId), {
-                        parentQuizScore: score,
-                        parentQuizMax: max,
-                        seenByParent: true,
-                        seenAt: new Date().toISOString()
-                    });
-                }}
             />
         ) : (
-            // ... LOGIN SCREEN ...
             <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 px-4 pt-8 pb-12 overflow-y-auto">
             <div className="bg-white/80 backdrop-blur-md p-8 rounded-2xl shadow-xl max-w-md w-full border border-white">
                 <Logo title={organizationName} />
 
                 {!showPhoneSetup ? (
                     <>
+                        {/* MAIN SELECTION VIEW */}
                         {loginView === 'SELECTION' && (
                             <div className="space-y-4 animate-fade-in">
-                                <button onClick={() => { setLoginView('PARENT'); setLoginError(''); }} className="w-full bg-white hover:bg-emerald-50 border-2 border-emerald-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group">
+                                <button 
+                                    onClick={() => { setLoginView('PARENT'); setLoginError(''); }}
+                                    className="w-full bg-white hover:bg-emerald-50 border-2 border-emerald-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group"
+                                >
                                     <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-emerald-200 transition">👨‍👩‍👧‍👦</div>
-                                    <div className="text-right"><h3 className="font-bold text-lg text-emerald-900">دخول ولي الأمر</h3><p className="text-sm text-gray-500">تابع تقدم ابنك وتواصل مع المعلم</p></div><span className="mr-auto text-emerald-300 text-xl group-hover:text-emerald-500">⬅</span>
+                                    <div className="text-right">
+                                        <h3 className="font-bold text-lg text-emerald-900">دخول ولي الأمر</h3>
+                                        <p className="text-sm text-gray-500">تابع تقدم ابنك وتواصل مع المعلم</p>
+                                    </div>
+                                    <span className="mr-auto text-emerald-300 text-xl group-hover:text-emerald-500">⬅</span>
                                 </button>
-                                <button onClick={() => { setLoginView('TEACHER'); setLoginError(''); }} className="w-full bg-white hover:bg-blue-50 border-2 border-blue-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group">
+
+                                <button 
+                                    onClick={() => { setLoginView('TEACHER'); setLoginError(''); }}
+                                    className="w-full bg-white hover:bg-blue-50 border-2 border-blue-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group"
+                                >
                                     <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-blue-200 transition">👳‍♂️</div>
-                                    <div className="text-right"><h3 className="font-bold text-lg text-blue-900">دخول المعلم</h3><p className="text-sm text-gray-500">إدارة الحلقة وتسجيل الطلاب</p></div><span className="mr-auto text-blue-300 text-xl group-hover:text-blue-500">⬅</span>
+                                    <div className="text-right">
+                                        <h3 className="font-bold text-lg text-blue-900">دخول المعلم</h3>
+                                        <p className="text-sm text-gray-500">إدارة الحلقة وتسجيل الطلاب</p>
+                                    </div>
+                                    <span className="mr-auto text-blue-300 text-xl group-hover:text-blue-500">⬅</span>
                                 </button>
-                                <div className="mt-8 text-center pt-4 border-t border-gray-100"><button onClick={() => setLoginView('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">🔐 دخول المسؤول (المبرمج)</button></div>
+                                
+                                <div className="mt-8 text-center pt-4 border-t border-gray-100">
+                                    <button onClick={() => setLoginView('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">
+                                        🔐 دخول المسؤول (المبرمج)
+                                    </button>
+                                </div>
                             </div>
                         )}
 
+                        {/* LOGIN FORMS */}
                         <div className="space-y-8">
                         {loginView === 'PARENT' && (
                             <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative">
                                 <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-emerald-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
                                 <h3 className="text-center font-bold text-emerald-800 text-lg mb-4">تسجيل دخول ولي الأمر</h3>
-                                <div><label className="block text-sm font-medium text-gray-600 mb-1">اختر اسم المعلم</label><select className="w-full p-3 border border-gray-300 rounded-lg bg-white" value={parentSelectedTeacher} onChange={(e) => setParentSelectedTeacher(e.target.value)}><option value="">-- اختر الاسم --</option>{teachers.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}</select></div>
-                                <div><label className="block text-sm font-medium text-gray-600 mb-1">كود الطالب</label><input type="text" placeholder="أدخل الكود" className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none" value={parentCodeInput} onChange={(e) => setParentCodeInput(e.target.value)} /></div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-1">اختر اسم المعلم (الشيخ)</label>
+                                    <select 
+                                    className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                    value={parentSelectedTeacher}
+                                    onChange={(e) => setParentSelectedTeacher(e.target.value)}
+                                    >
+                                    <option value="">-- اختر الاسم --</option>
+                                    {teachers.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                    </select>
+                                </div>
+                                <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">كود الطالب</label>
+                                <input 
+                                    type="text"
+                                    placeholder="أدخل الكود"
+                                    className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    value={parentCodeInput}
+                                    onChange={(e) => setParentCodeInput(e.target.value)}
+                                />
+                                </div>
                                 {loginError && <p className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{loginError}</p>}
                                 <Button type="submit" className="w-full text-lg">دخول</Button>
                             </form>
@@ -542,10 +502,33 @@ const App: React.FC = () => {
                             <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative">
                                 <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-blue-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
                                 <h3 className="text-center font-bold text-blue-800 text-lg mb-4">تسجيل دخول المعلم</h3>
-                                <div><label className="block text-sm font-medium text-gray-600 mb-1 text-center">اختر اسم المعلم</label><select className="w-full p-3 border border-gray-300 rounded-lg bg-white" value={selectedTeacherId} onChange={(e) => setSelectedTeacherId(e.target.value)}><option value="">-- اختر الاسم --</option>{teachers.map(t => (<option key={t.id} value={t.id}>{t.name}</option>))}</select></div>
-                                <div><label className="block text-sm font-medium text-gray-600 mb-1 text-center">الرقم الخاص (كود الدخول)</label><input type="password" className="w-full p-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-emerald-500 outline-none font-mono" value={teacherCodeInput} onChange={(e) => setTeacherCodeInput(e.target.value)} placeholder="******" /></div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-1 text-center">اختر اسم المعلم</label>
+                                    <select 
+                                    className="w-full p-3 border border-gray-300 rounded-lg bg-white"
+                                    value={selectedTeacherId}
+                                    onChange={(e) => setSelectedTeacherId(e.target.value)}
+                                    >
+                                    <option value="">-- اختر الاسم --</option>
+                                    {teachers.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-600 mb-1 text-center">الرقم الخاص (كود الدخول)</label>
+                                    <input 
+                                        type="password"
+                                        className="w-full p-3 border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-emerald-500 outline-none font-mono"
+                                        value={teacherCodeInput}
+                                        onChange={(e) => setTeacherCodeInput(e.target.value)}
+                                        placeholder="******"
+                                    />
+                                </div>
                                 {loginError && <p className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{loginError}</p>}
-                                <Button variant="secondary" type="submit" className="w-full" disabled={!selectedTeacherId}>دخول</Button>
+                                <Button variant="secondary" type="submit" className="w-full" disabled={!selectedTeacherId}>
+                                    دخول
+                                </Button>
                             </form>
                         )}
 
@@ -553,7 +536,13 @@ const App: React.FC = () => {
                             <form onSubmit={handleAdminLogin} className="space-y-4 animate-slide-up relative border-t pt-4 mt-4">
                                 <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-10 right-0 text-gray-500 hover:text-gray-800 font-bold text-xs bg-gray-100 px-2 py-1 rounded">إلغاء</button>
                                 <h3 className="text-center font-bold text-gray-700">دخول المبرمج</h3>
-                                <input type="password" placeholder="كلمة المرور" className="w-full p-2 border rounded text-center" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} />
+                                <input 
+                                    type="password"
+                                    placeholder="كلمة المرور"
+                                    className="w-full p-2 border rounded text-center"
+                                    value={adminPassword}
+                                    onChange={e => setAdminPassword(e.target.value)}
+                                />
                                 {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
                                 <Button variant="danger" type="submit" className="w-full">دخول المسؤول</Button>
                             </form> 
@@ -565,13 +554,41 @@ const App: React.FC = () => {
                         <h3 className="text-xl font-bold text-center mb-2 text-emerald-800">إكمال البيانات</h3>
                         <p className="text-sm text-gray-500 text-center mb-6">يرجى إدخال رقم الهاتف لمرة واحدة فقط، لتمكين المحفظ من التواصل معكم.</p>
                         <form onSubmit={handleCompleteParentProfile} className="space-y-4">
-                            <div><label className="block text-sm font-medium text-gray-600 mb-1">رقم هاتف ولي الأمر</label><input type="tel" placeholder="01xxxxxxxxx" className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none" value={parentPhoneInput} onChange={(e) => setParentPhoneInput(e.target.value)} /></div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">رقم هاتف ولي الأمر</label>
+                                <input 
+                                    type="tel"
+                                    placeholder="01xxxxxxxxx"
+                                    className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    value={parentPhoneInput}
+                                    onChange={(e) => setParentPhoneInput(e.target.value)}
+                                />
+                            </div>
                             {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
                             <Button type="submit" className="w-full">حفظ ودخول</Button>
                             <Button type="button" variant="outline" onClick={handleLogout} className="w-full">إلغاء</Button>
                         </form>
                     </div>
                 )}
+
+                {deferredPrompt && (
+                  <div className="mt-6 text-center animate-bounce">
+                    <Button onClick={handleInstallClick} className="w-full bg-emerald-800 hover:bg-emerald-900 shadow-lg border border-emerald-400">
+                      📲 تثبيت التطبيق (أندرويد)
+                    </Button>
+                  </div>
+                )}
+                
+                {isIOS && !deferredPrompt && (
+                    <div className="mt-6 text-center bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <p className="text-xs text-gray-600 font-bold mb-1">لتثبيت التطبيق على الآيفون:</p>
+                        <p className="text-xs text-gray-500">اضغط على زر المشاركة <span className="text-lg">⎋</span> ثم اختر "Add to Home Screen" (إضافة للشاشة الرئيسية)</p>
+                    </div>
+                )}
+            </div>
+            
+            <div className="mt-6 text-center text-emerald-800/50 text-sm">
+                <p>يعمل التطبيق بدون إنترنت. يتم حفظ البيانات على الهاتف.</p>
             </div>
             </div>
         )}
