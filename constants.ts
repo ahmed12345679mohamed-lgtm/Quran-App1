@@ -1,7 +1,7 @@
 
 import { Student, Grade, Teacher, Announcement, DailyLog, QuranAssignment } from './types';
 
-export const APP_VERSION = "2.8.0"; // Bump version
+export const APP_VERSION = "2.9.0"; // Bump version
 
 export const MONTHS_LIST = [
   "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
@@ -236,7 +236,7 @@ const generateLogsForStudent = (teacherId: string, teacherName: string): DailyLo
                 parentQuizMax: 2,
                 seenByParent: Math.random() > 0.4,
                 notes: '',
-                attendance: { arrivalTime: '16:00', departureTime: '17:30' }
+                attendance: [{ id: 'att1', arrival: '16:00', departure: '17:30' }]
              };
         } else {
             const isAbsent = Math.random() < 0.1;
@@ -253,7 +253,7 @@ const generateLogsForStudent = (teacherId: string, teacherName: string): DailyLo
                     seenByParent: Math.random() > 0.3,
                     jadeed: { type: 'SURAH', name: 'النبأ', ayahFrom: 1, ayahTo: 10, grade: Grade.EXCELLENT, juzNumber: 30 },
                     murajaah: [{ type: 'SURAH', name: 'النازعات', ayahFrom: 1, ayahTo: 40, grade: Grade.VERY_GOOD, juzNumber: 30 }],
-                    attendance: { arrivalTime: '16:00', departureTime: '18:00' }
+                    attendance: [{ id: 'att1', arrival: '16:00', departure: '18:00' }]
                 };
             }
         }

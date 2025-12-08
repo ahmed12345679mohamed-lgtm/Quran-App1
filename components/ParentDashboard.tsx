@@ -497,7 +497,42 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
                                         <div className="p-4 grid gap-4 md:grid-cols-2">
                                             {log.jadeed && (<div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100"><p className="text-xs text-emerald-600 font-bold mb-1">الحفظ الجديد</p><div className="flex justify-between items-center"><p className="font-bold text-gray-800">{log.jadeed.type === 'RANGE' ? `من ${log.jadeed.name} إلى ${log.jadeed.endName}` : log.jadeed.type === 'SURAH' ? `سورة ${log.jadeed.name}` : log.jadeed.name}<span className="block text-xs font-normal text-gray-500">{log.jadeed.type === 'SURAH' ? `الآيات ${log.jadeed.ayahFrom} - ${log.jadeed.ayahTo}` : ''}</span></p><span className={`px-3 py-1 rounded-full text-xs font-bold ${log.jadeed.grade === Grade.EXCELLENT ? 'bg-emerald-500 text-white' : log.jadeed.grade === Grade.VERY_GOOD ? 'bg-blue-500 text-white' : log.jadeed.grade === Grade.NEEDS_WORK ? 'bg-red-500 text-white' : 'bg-gray-200 text-gray-700'}`}>{log.jadeed.grade}</span></div></div>)}
                                             {log.murajaah && log.murajaah.length > 0 && (<div className="bg-amber-50 p-3 rounded-lg border border-amber-100"><p className="text-xs text-amber-600 font-bold mb-1">المراجعة</p>{log.murajaah.map((m, idx) => (<div key={idx} className="flex justify-between items-center mb-2 last:mb-0 border-b last:border-0 border-amber-200/50 pb-1 last:pb-0"><p className="font-bold text-gray-800 text-sm">{m.type === 'RANGE' ? `من ${m.name} إلى ${m.endName}` : m.type === 'SURAH' ? `سورة ${m.name}` : m.name}<span className="text-xs font-normal text-gray-500 mx-1">{m.type === 'SURAH' ? `(${m.ayahFrom} - ${m.ayahTo})` : ''}</span></p><span className="text-xs font-bold text-amber-700 bg-white px-2 py-0.5 rounded border border-amber-200">{m.grade}</span></div>))}</div>)}
-                                            {log.attendance && (<div className="md:col-span-2 flex justify-between gap-4 text-sm font-bold text-gray-600 bg-gray-100 p-3 rounded-xl border border-gray-200 shadow-inner"><div className="flex items-center gap-2"><span className="text-2xl">🕒</span><div className="flex flex-col"><span className="text-[10px] text-gray-500 uppercase">وقت الحضور</span><span className="text-emerald-700">{formatTime12Hour(log.attendance.arrivalTime)}</span></div></div>{log.attendance.departureTime && (<div className="flex items-center gap-2"><div className="flex flex-col items-end"><span className="text-[10px] text-gray-500 uppercase">وقت الانصراف</span><span className="text-red-700">{formatTime12Hour(log.attendance.departureTime)}</span></div><span className="text-2xl">⬅️</span></div>)}</div>)}
+                                            {/* Updated Attendance Display for Multiple Records */}
+                                            {log.attendance && log.attendance.length > 0 && (
+                                                <div className="md:col-span-2 bg-gray-100 p-3 rounded-xl border border-gray-200 shadow-inner">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className="text-2xl">🕒</span>
+                                                        <span className="text-gray-600 font-bold text-sm">سجل الحضور اليوم</span>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        {log.attendance.map((att, idx) => (
+                                                            <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-gray-100 text-sm">
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-[10px] text-emerald-600 font-bold uppercase">حضور {idx + 1}</span>
+                                                                    <span className="font-bold text-gray-800">{formatTime12Hour(att.arrival)}</span>
+                                                                </div>
+                                                                <span className="text-gray-300">⬅</span>
+                                                                <div className="flex flex-col items-end">
+                                                                    <span className="text-[10px] text-red-600 font-bold uppercase">انصراف {idx + 1}</span>
+                                                                    <span className="font-bold text-gray-800">{att.departure ? formatTime12Hour(att.departure) : '--'}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Legacy Support for old single attendance object if any exist in local storage */}
+                                            {/* @ts-ignore */}
+                                            {log.attendance && !Array.isArray(log.attendance) && log.attendance.arrivalTime && (
+                                                 <div className="md:col-span-2 flex justify-between gap-4 text-sm font-bold text-gray-600 bg-gray-100 p-3 rounded-xl border border-gray-200 shadow-inner">
+                                                     {/* @ts-ignore */}
+                                                    <div className="flex items-center gap-2"><span className="text-2xl">🕒</span><div className="flex flex-col"><span className="text-[10px] text-gray-500 uppercase">وقت الحضور</span><span className="text-emerald-700">{formatTime12Hour(log.attendance.arrivalTime)}</span></div></div>
+                                                     {/* @ts-ignore */}
+                                                    {log.attendance.departureTime && (<div className="flex items-center gap-2"><div className="flex flex-col items-end"><span className="text-[10px] text-gray-500 uppercase">وقت الانصراف</span><span className="text-red-700">{formatTime12Hour(log.attendance.departureTime)}</span></div><span className="text-2xl">⬅️</span></div>)}
+                                                 </div>
+                                            )}
+
                                             {teacherNotes && (<div className="md:col-span-2 bg-gray-50 p-3 rounded border border-gray-200 text-sm text-gray-700 whitespace-pre-wrap"><span className="font-bold block mb-1">📝 ملاحظات المعلم:</span>{teacherNotes}</div>)}
                                             {aiMessage && (<div className="md:col-span-2 bg-gradient-to-r from-purple-100 to-indigo-50 p-4 rounded-xl border border-purple-200 shadow-sm relative overflow-hidden"><div className="absolute top-0 right-0 -mt-2 -mr-2 w-16 h-16 bg-purple-200 rounded-full opacity-50 blur-xl"></div><div className="relative z-10 flex items-start gap-3"><span className="text-2xl">✨</span><div><h4 className="text-purple-800 font-bold text-sm mb-1">رسالة خاصة</h4><p className="text-purple-900 text-sm italic leading-relaxed whitespace-pre-line">"{aiMessage.trim()}"</p></div></div></div>)}
                                         </div>
@@ -507,7 +542,7 @@ export const ParentDashboard: React.FC<ParentDashboardProps> = ({
                         )}
                     </div>
                 )}
-
+                {/* ... (Other Tabs remain the same) ... */}
                 {activeTab === 'next' && (<div className="bg-white rounded-xl shadow-lg p-6 animate-fade-in text-center">{!student.nextPlan ? (<div className="py-10"><p className="text-gray-400 text-lg">لم يحدد المعلم الواجب القادم بعد.</p></div>) : (<div className="space-y-6"><div className="bg-blue-50 p-6 rounded-xl border border-blue-200"><h3 className="text-2xl font-bold text-blue-800 mb-2">اللوح (الحفظ الجديد)</h3><p className="text-xl text-gray-800 font-bold">{student.nextPlan.jadeed.type === 'RANGE' ? `من ${student.nextPlan.jadeed.name} إلى ${student.nextPlan.jadeed.endName}` : student.nextPlan.jadeed.type === 'SURAH' ? `سورة ${student.nextPlan.jadeed.name}` : student.nextPlan.jadeed.name}</p>{student.nextPlan.jadeed.type === 'SURAH' && (<div className="mt-2 inline-block bg-white px-4 py-1 rounded-full border border-blue-200 text-blue-700 font-bold">{`من آية ${student.nextPlan.jadeed.ayahFrom} إلى ${student.nextPlan.jadeed.ayahTo}`}</div>)}</div><div className="bg-amber-50 p-6 rounded-xl border border-amber-200"><h3 className="text-xl font-bold text-amber-800 mb-4">المراجعة المطلوبة</h3>{student.nextPlan.murajaah.map((m, idx) => (<div key={idx} className="bg-white p-3 rounded-lg shadow-sm mb-2 text-gray-800"><span className="font-bold">{m.type === 'RANGE' ? `من ${m.name} إلى ${m.endName}` : m.type === 'SURAH' ? `سورة ${m.name}` : m.name}</span>{m.type === 'SURAH' && <span className="text-sm text-gray-500 mr-2">({m.ayahFrom} - {m.ayahTo})</span>}</div>))}</div></div>)}</div>)}
                 
                 {activeTab === 'schedule' && (

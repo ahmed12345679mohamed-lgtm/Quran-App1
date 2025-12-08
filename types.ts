@@ -7,7 +7,7 @@ export enum Grade {
   NEEDS_WORK = 'يحتاج إعادة',
 }
 
-export type AssignmentType = 'SURAH' | 'JUZ' | 'RANGE';
+export type AssignmentType = 'SURAH' | 'JUZ' | 'RANGE' | 'MULTI';
 
 export interface QuranAssignment {
   type: AssignmentType;
@@ -16,15 +16,18 @@ export interface QuranAssignment {
   ayahFrom: number;
   ayahTo: number;
   juzNumber?: number;
+  multiSurahs?: string[]; // For MULTI type
   grade: Grade;
 }
 
-export interface Attendance {
-  arrivalTime: string;
-  departureTime?: string;
+// --- UPDATED ATTENDANCE STRUCTURE ---
+export interface AttendanceRecord {
+  id: string;
+  arrival: string;
+  departure?: string;
 }
+// ------------------------------------
 
-// --- NEW STRUCTURE FOR MULTIPLE QUESTIONS ---
 export interface QuizItem {
   id: string;
   question: string;
@@ -33,10 +36,9 @@ export interface QuizItem {
 }
 
 export interface AdabSession {
-  title: string; // e.g. "Lesson Topic"
-  quizzes: QuizItem[]; // Array of questions
+  title: string; 
+  quizzes: QuizItem[]; 
 }
-// --------------------------------------------
 
 export interface DailyLog {
   id: string;
@@ -44,13 +46,13 @@ export interface DailyLog {
   isAbsent?: boolean; 
   isAdab?: boolean; 
   
-  adabSession?: AdabSession; // Now holds multiple questions
-  parentQuizScore?: number; // Store score (e.g., 3 out of 5)
+  adabSession?: AdabSession; 
+  parentQuizScore?: number; 
   parentQuizMax?: number; 
   
   jadeed?: QuranAssignment; 
   murajaah?: QuranAssignment[]; 
-  attendance?: Attendance;
+  attendance?: AttendanceRecord[]; // Changed to array
   notes?: string;
   teacherId: string;
   teacherName: string;
@@ -69,14 +71,14 @@ export interface Payment {
 
 export interface CalendarEvent {
   id: string;
-  title: string; // e.g., "درس رياضيات", "نوم", "مدرسة"
-  time: string;  // e.g., "14:00"
+  title: string; 
+  time: string;  
 }
 
 export interface WeeklySchedule {
   day: string; 
-  events: CalendarEvent[]; // Changed from simple expectedTime to list of events
-  isDayOff?: boolean; // Flag if the student is completely off/busy
+  events: CalendarEvent[]; 
+  isDayOff?: boolean; 
 }
 
 export interface Student {
@@ -92,8 +94,8 @@ export interface Student {
     jadeed: QuranAssignment;
     murajaah: QuranAssignment[];
   }; 
-  calculatorNotes?: string; // New field for calculator notes
-  isFeeOverdue?: boolean; // NEW: Flag for manual fee reminder
+  calculatorNotes?: string; 
+  isFeeOverdue?: boolean; 
 }
 
 export interface Teacher {

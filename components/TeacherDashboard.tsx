@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Student, DailyLog, Grade, QuranAssignment, Announcement, Payment, QuizItem, Teacher } from '../types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Student, DailyLog, Grade, QuranAssignment, Announcement, Payment, QuizItem, Teacher, AttendanceRecord } from '../types';
 import { SURAH_NAMES, JUZ_LIST, SURAH_DATA, formatDateDual, formatTime12Hour } from '../constants';
 import { Button } from './Button';
 import { TimePicker } from './TimePicker';
@@ -29,7 +29,8 @@ const emptyAssignment: QuranAssignment = {
   name: SURAH_NAMES[0],
   ayahFrom: 1,
   ayahTo: 7,
-  grade: Grade.GOOD
+  grade: Grade.GOOD,
+  multiSurahs: []
 };
 
 interface AssignmentFormProps {
@@ -47,6 +48,7 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({
 }) => {
   const isSurah = data.type === 'SURAH';
   const isRange = data.type === 'RANGE';
+  const isMulti = data.type === 'MULTI';
 
   const maxAyahs = useMemo(() => {
     if (isSurah) {
@@ -57,6 +59,23 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({
   }, [data.name, isSurah]);
 
   const ayahOptions = useMemo(() => Array.from({ length: maxAyahs }, (_, i) => i + 1), [maxAyahs]);
+
+  const handleAddMultiSurah = () => {
+      const currentList = data.multiSurahs || [];
+      onChange('multiSurahs', [...currentList, SURAH_NAMES[0]]);
+  };
+
+  const handleUpdateMultiSurah = (index: number, val: string) => {
+      const currentList = [...(data.multiSurahs || [])];
+      currentList[index] = val;
+      onChange('multiSurahs', currentList);
+  };
+
+  const handleRemoveMultiSurah = (index: number) => {
+      const currentList = [...(data.multiSurahs || [])];
+      currentList.splice(index, 1);
+      onChange('multiSurahs', currentList);
+  };
 
   return (
     <div className={`p-4 rounded-xl border-2 ${colorClass} mb-3 relative animate-fade-in`}>
@@ -69,14 +88,14 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        {['SURAH', 'RANGE', 'JUZ'].map(type => (
+      <div className="grid grid-cols-4 gap-1 mb-3">
+        {['SURAH', 'RANGE', 'JUZ', 'MULTI'].map(type => (
           <button
             key={type}
-            className={`py-1 px-2 rounded-lg text-xs font-bold transition ${data.type === type ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border'}`}
+            className={`py-1 px-1 rounded-lg text-[10px] font-bold transition whitespace-nowrap ${data.type === type ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 border'}`}
             onClick={() => onChange('type', type)}
           >
-            {type === 'SURAH' ? 'سورة' : type === 'RANGE' ? 'نطاق' : 'جزء'}
+            {type === 'SURAH' ? 'سورة' : type === 'RANGE' ? 'نطاق' : type === 'JUZ' ? 'جزء' : 'متعدد'}
           </button>
         ))}
       </div>
@@ -90,6 +109,26 @@ const AssignmentForm: React.FC<AssignmentFormProps> = ({
            >
              {JUZ_LIST.map((j, i) => <option key={i} value={i+1}>{j}</option>)}
            </select>
+        ) : isMulti ? (
+            <div className="bg-white p-2 rounded-lg border border-gray-200">
+                <p className="text-[10px] text-gray-400 mb-2">اختر السور المتفرقة:</p>
+                <div className="space-y-2 mb-2">
+                    {(data.multiSurahs || []).map((surah, idx) => (
+                        <div key={idx} className="flex gap-2 items-center">
+                            <span className="text-xs font-bold w-4">{idx + 1}.</span>
+                            <select 
+                                className="flex-1 p-2 border rounded text-sm"
+                                value={surah}
+                                onChange={(e) => handleUpdateMultiSurah(idx, e.target.value)}
+                            >
+                                {SURAH_NAMES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            <button onClick={() => handleRemoveMultiSurah(idx)} className="text-red-500 font-bold px-2">×</button>
+                        </div>
+                    ))}
+                </div>
+                <button onClick={handleAddMultiSurah} className="w-full py-1 text-xs border border-dashed border-gray-400 text-gray-600 rounded hover:bg-gray-50">+ إضافة سورة أخرى</button>
+            </div>
         ) : (
           <>
             <div className="flex gap-2">
@@ -215,6 +254,16 @@ const DeleteRow = ({ student, onDelete }: { student: Student, onDelete: (id: str
     )
 };
 
+interface DraftState {
+    logId: string | null;
+    attendance: AttendanceRecord[];
+    jadeed: QuranAssignment;
+    murajaah: QuranAssignment[];
+    notes: string;
+    nextJadeed: QuranAssignment;
+    nextMurajaah: QuranAssignment[];
+}
+
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   teacherName,
   teacherId,
@@ -259,11 +308,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   ]);
 
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
-  const [attendance, setAttendance] = useState({ arrivalTime: '16:00', departureTime: '18:00' });
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([{ id: '1', arrival: '16:00', departure: '18:00' }]);
   const [jadeed, setJadeed] = useState<QuranAssignment>({ ...emptyAssignment });
   const [murajaahList, setMurajaahList] = useState<QuranAssignment[]>([{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
   const [notes, setNotes] = useState('');
   const [isGeneratingMessage, setIsGeneratingMessage] = useState(false);
+  const [currentLogId, setCurrentLogId] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false); // New state to track if form is modified
   
   const [nextJadeed, setNextJadeed] = useState<QuranAssignment>({ ...emptyAssignment, grade: Grade.GOOD });
   const [nextMurajaahList, setNextMurajaahList] = useState<QuranAssignment[]>([{ ...emptyAssignment }]);
@@ -275,7 +326,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [calcAmount, setCalcAmount] = useState('');
   const [calcWeeklyDays, setCalcWeeklyDays] = useState('3');
   const [calcNotes, setCalcNotes] = useState('');
+
+  // Editing Phone State
+  const [isEditingPhone, setIsEditingPhone] = useState(false);
+  const [newPhoneVal, setNewPhoneVal] = useState('');
   
+  // Drafts State: Key is studentId, Value is the Draft State
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+
   const selectedStudent = useMemo(() => students.find(s => s.id === selectedStudentId), [students, selectedStudentId]);
 
   const sortedStudents = useMemo(() => {
@@ -301,27 +359,87 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       return { present, absent };
   }, [students, statsDate]);
 
-  const handleOpenStudent = (s: Student) => {
-    setSelectedStudentId(s.id);
-    setStudentTab('LOG'); 
-    
-    const todayStr = new Date().toDateString();
-    const hasLogToday = s.logs.some(l => new Date(l.date).toDateString() === todayStr);
+  // SAVE DRAFT: Function to save current state to drafts
+  const saveCurrentDraft = (studentId: string) => {
+      // Only save draft if changes were made
+      if (!isDirty) return; 
 
-    if (!hasLogToday && s.nextPlan) {
-        setJadeed({ ...s.nextPlan.jadeed, grade: Grade.GOOD });
-        setMurajaahList(s.nextPlan.murajaah.map(m => ({ ...m, grade: Grade.GOOD })));
-        if (s.nextPlan.murajaah.length === 0) {
-            setMurajaahList([{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
-        }
-    } else {
-        setJadeed({ ...emptyAssignment });
-        setMurajaahList([{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
+      const draft: DraftState = {
+          logId: currentLogId,
+          attendance: attendanceRecords,
+          jadeed,
+          murajaah: murajaahList,
+          notes,
+          nextJadeed,
+          nextMurajaah: nextMurajaahList
+      };
+      setDrafts(prev => ({ ...prev, [studentId]: draft }));
+  };
+
+  const handleCloseStudent = () => {
+      if (selectedStudentId) {
+          saveCurrentDraft(selectedStudentId);
+      }
+      setSelectedStudentId(null);
+      setIsEditingPhone(false);
+      setIsDirty(false); // Reset dirty flag
+  };
+
+  const handleOpenStudent = (s: Student) => {
+    // If there was a previously selected student, save their draft first
+    if (selectedStudentId) {
+        saveCurrentDraft(selectedStudentId);
     }
 
-    setNotes('');
-    setCalcNotes(s.calculatorNotes || '');
+    setSelectedStudentId(s.id);
+    setStudentTab('LOG'); 
+    setIsEditingPhone(false);
+    setIsDirty(false); // Reset dirty flag initially
     
+    // CHECK FOR DRAFT FIRST
+    if (drafts[s.id]) {
+        const draft = drafts[s.id];
+        setCurrentLogId(draft.logId);
+        setAttendanceRecords(draft.attendance);
+        setJadeed(draft.jadeed);
+        setMurajaahList(draft.murajaah);
+        setNotes(draft.notes);
+        setNextJadeed(draft.nextJadeed);
+        setNextMurajaahList(draft.nextMurajaah);
+        setCalcNotes(s.calculatorNotes || '');
+        return;
+    }
+
+    // IF NO DRAFT, CHECK FOR EXISTING LOG (TODAY)
+    const todayStr = new Date().toDateString();
+    const existingLog = s.logs.find(l => new Date(l.date).toDateString() === todayStr);
+
+    if (existingLog && !existingLog.isAbsent && !existingLog.isAdab) {
+        setCurrentLogId(existingLog.id);
+        setJadeed(existingLog.jadeed || { ...emptyAssignment });
+        setMurajaahList(existingLog.murajaah || [{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
+        setNotes(existingLog.notes || '');
+        if (existingLog.attendance && existingLog.attendance.length > 0) {
+            setAttendanceRecords(existingLog.attendance);
+        } else {
+             // @ts-ignore compatibility
+            if (existingLog.attendance && existingLog.attendance.arrivalTime) {
+                 // @ts-ignore
+                setAttendanceRecords([{ id: '1', arrival: existingLog.attendance.arrivalTime, departure: existingLog.attendance.departureTime }]);
+            } else {
+                setAttendanceRecords([{ id: '1', arrival: '16:00', departure: '18:00' }]);
+            }
+        }
+    } else {
+        // RESET FORM for New Entry
+        setCurrentLogId(null);
+        setJadeed({ ...emptyAssignment });
+        setMurajaahList([{ ...emptyAssignment, grade: Grade.VERY_GOOD }]);
+        setNotes('');
+        setAttendanceRecords([{ id: '1', arrival: '16:00', departure: '18:00' }]);
+    }
+
+    // Load Next Plan
     if (s.nextPlan) {
         setNextJadeed(s.nextPlan.jadeed);
         if (s.nextPlan.murajaah && s.nextPlan.murajaah.length > 0) {
@@ -333,11 +451,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         setNextJadeed({ ...emptyAssignment, grade: Grade.GOOD });
         setNextMurajaahList([{ ...emptyAssignment }]);
     }
+    
+    // Load Calc Notes
+    setCalcNotes(s.calculatorNotes || '');
+  };
+
+  const markAsDirty = () => {
+      if (!isDirty) setIsDirty(true);
   };
 
   const handleGenerateMessage = async () => {
     if (!selectedStudent) return;
     setIsGeneratingMessage(true);
+    markAsDirty();
     const tempLog: DailyLog = {
       id: 'temp',
       date: new Date().toISOString(),
@@ -350,27 +476,55 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     };
 
     const message = await generateEncouragement(selectedStudent.name, tempLog);
-    const separator = notes ? '\n\n' : '';
-    setNotes(notes + separator + "✨ " + message);
+    // Overwrite notes completely or append? User asked for greeting/closing structure, 
+    // usually this replaces the whole manual note or serves as the main note.
+    // Let's replace if empty, or append if exists but with a clear separator.
+    if (notes.trim()) {
+         setNotes(notes + '\n\n' + message);
+    } else {
+         setNotes(message);
+    }
+    
     setIsGeneratingMessage(false);
   };
 
   const handleSaveLog = () => {
     if (!selectedStudent) return;
 
-    const newLog: DailyLog = {
-      id: `log_${Date.now()}`,
-      date: new Date().toISOString(),
-      teacherId: selectedStudent.teacherId,
-      teacherName: teacherName,
-      seenByParent: false,
-      attendance: attendance,
-      jadeed: jadeed,
-      murajaah: murajaahList,
-      notes: notes,
-      isAbsent: false,
-      isAdab: false
-    };
+    let updatedLogs = [...selectedStudent.logs];
+    
+    if (currentLogId) {
+        updatedLogs = updatedLogs.map(log => {
+            if (log.id === currentLogId) {
+                return {
+                    ...log,
+                    attendance: attendanceRecords,
+                    jadeed: jadeed,
+                    murajaah: murajaahList,
+                    notes: notes,
+                    seenByParent: false
+                };
+            }
+            return log;
+        });
+        onShowNotification('تم تحديث السجل اليومي بنجاح', 'success');
+    } else {
+        const newLog: DailyLog = {
+            id: `log_${Date.now()}`,
+            date: new Date().toISOString(),
+            teacherId: selectedStudent.teacherId,
+            teacherName: teacherName,
+            seenByParent: false,
+            attendance: attendanceRecords,
+            jadeed: jadeed,
+            murajaah: murajaahList,
+            notes: notes,
+            isAbsent: false,
+            isAdab: false
+        };
+        updatedLogs = [newLog, ...updatedLogs];
+        onShowNotification('تم حفظ السجل اليومي بنجاح', 'success');
+    }
 
     const nextPlan = {
         jadeed: nextJadeed,
@@ -379,13 +533,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
     const updatedStudent = {
       ...selectedStudent,
-      logs: [newLog, ...selectedStudent.logs],
+      logs: updatedLogs,
       nextPlan: nextPlan
     };
 
     onUpdateStudent(updatedStudent);
-    onShowNotification('تم حفظ السجل اليومي والواجب القادم بنجاح', 'success');
-    setSelectedStudentId(null);
+    
+    if (!currentLogId) {
+        setCurrentLogId(updatedLogs[0].id);
+    }
+    
+    // Clear draft and dirty flag after successful save
+    const newDrafts = { ...drafts };
+    delete newDrafts[selectedStudent.id];
+    setDrafts(newDrafts);
+    setIsDirty(false); // Mark as clean so it shows "Done" not "Draft"
+  };
+
+  const handleUpdatePhone = () => {
+      if (!selectedStudent) return;
+      onUpdateStudent({ ...selectedStudent, parentPhone: newPhoneVal });
+      setIsEditingPhone(false);
+      onShowNotification('تم تحديث رقم الهاتف بنجاح', 'success');
   };
 
   const handleAddPayment = () => {
@@ -440,14 +609,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
 
     const formatAss = (a: QuranAssignment) => {
+        if (a.type === 'MULTI') {
+            const list = a.multiSurahs && a.multiSurahs.length > 0 ? a.multiSurahs.join('، ') : 'متفرقات';
+            return `سور متعددة: ${list}`;
+        }
         if (a.type === 'RANGE') return `من ${a.name} إلى ${a.endName}`;
         if (a.type === 'SURAH') return `سورة ${a.name} (${a.ayahFrom}-${a.ayahTo})`;
         return a.name;
     };
 
     // Prepare message parts
-    const arrival = formatTime12Hour(attendance.arrivalTime);
-    const departure = attendance.departureTime ? formatTime12Hour(attendance.departureTime) : '--';
+    let attendanceText = "";
+    attendanceRecords.forEach((att, idx) => {
+        const arrival = formatTime12Hour(att.arrival);
+        const departure = att.departure ? formatTime12Hour(att.departure) : '--';
+        attendanceText += `🕐 *الفترة ${idx + 1}:* ${arrival} - ${departure}\n`;
+    });
     
     const jadeedText = `${formatAss(jadeed)} ${!jadeed.grade ? '' : `(التقدير: ${jadeed.grade})`}`;
     const murajaahText = murajaahList.length > 0 
@@ -463,7 +640,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     let message = `*🕌 تقرير متابعة الطالب - دار التوحيد 🕌*\n\n`;
     message += `👤 *الاسم:* ${selectedStudent.name}\n`;
     message += `📅 *التاريخ:* ${new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}\n`;
-    message += `🕐 *الحضور:* ${arrival} - *الانصراف:* ${departure}\n\n`;
+    message += attendanceText + "\n";
     message += `───────────────\n`;
     
     message += `📊 *إنجاز اليوم:*\n`;
@@ -522,16 +699,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
   };
 
-  const handleAddCompDay = () => {
-      setCompDays([...compDays, { id: Date.now(), date: '', levels: [] }]);
+  const handleAddAttendanceSlot = () => {
+      setAttendanceRecords([...attendanceRecords, { id: Date.now().toString(), arrival: '16:00', departure: '18:00' }]);
+      markAsDirty();
   };
 
-  const handleRemoveCompDay = (id: number) => {
-      setCompDays(compDays.filter(d => d.id !== id));
+  const handleRemoveAttendanceSlot = (id: string) => {
+      if (attendanceRecords.length > 1) {
+          setAttendanceRecords(attendanceRecords.filter(a => a.id !== id));
+          markAsDirty();
+      }
   };
 
-  const handleCompDateChange = (id: number, val: string) => {
-      setCompDays(compDays.map(d => d.id === id ? { ...d, date: val } : d));
+  const handleAttendanceChange = (id: string, field: 'arrival' | 'departure', value: string) => {
+      setAttendanceRecords(attendanceRecords.map(a => a.id === id ? { ...a, [field]: value } : a));
+      markAsDirty();
   };
 
   const handleAddLevelToDay = (dayId: number, level: string) => {
@@ -559,6 +741,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const hasLogToday = !!todayLog;
     const isAbsentToday = todayLog?.isAbsent;
     
+    // Check if there is a draft for this student
+    const hasDraft = drafts[student.id];
+
     const lastLog = student.logs[0];
 
     let cardBg = "bg-white";
@@ -566,7 +751,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     let iconBg = "bg-gray-100 text-gray-500 border-gray-200";
     let statusBadge = null;
 
-    if (hasLogToday) {
+    if (hasDraft) {
+        // High priority for draft indication
+        cardBg = "bg-amber-50";
+        cardBorder = "border-l-4 border-l-amber-400";
+        iconBg = "bg-amber-100 text-amber-700 border-amber-200";
+        statusBadge = (
+            <span className="text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200 flex items-center gap-1 w-fit text-[10px]">
+                ✏️ مسودة غير محفوظة
+            </span>
+        );
+    } else if (hasLogToday) {
         if (isAbsentToday) {
             cardBg = "bg-red-50";
             cardBorder = "border-l-4 border-l-red-500";
@@ -654,12 +849,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         <div className="px-4 py-3 flex justify-between items-center">
             {selectedStudentId ? (
                 <div className="flex items-center gap-3 w-full animate-slide-right">
-                    <button onClick={() => setSelectedStudentId(null)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition text-gray-600 shadow-sm">
+                    <button onClick={handleCloseStudent} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition text-gray-600 shadow-sm">
                         ⬅
                     </button>
                     <div className="flex-1">
                         <h1 className="text-xl font-bold text-gray-800 truncate">{selectedStudent?.name}</h1>
-                        <p className="text-[10px] text-gray-400 font-bold">ملف الطالب</p>
+                        <div className="flex items-center gap-2">
+                            {isEditingPhone ? (
+                                <div className="flex items-center gap-1 scale-90 origin-right">
+                                    <input 
+                                        className="w-28 p-1 text-xs border rounded" 
+                                        value={newPhoneVal} 
+                                        onChange={(e) => setNewPhoneVal(e.target.value)} 
+                                        placeholder="01xxxxxxxxx"
+                                    />
+                                    <button onClick={handleUpdatePhone} className="bg-green-500 text-white px-2 py-1 rounded text-xs font-bold">حفظ</button>
+                                    <button onClick={() => setIsEditingPhone(false)} className="text-red-500 text-xs font-bold px-1">x</button>
+                                </div>
+                            ) : (
+                                <p className="text-[10px] text-gray-400 font-bold flex items-center gap-1">
+                                    📞 {selectedStudent?.parentPhone || 'لا يوجد هاتف'}
+                                    <button onClick={() => { setIsEditingPhone(true); setNewPhoneVal(selectedStudent?.parentPhone || ''); }} className="text-blue-400 hover:text-blue-600">✎</button>
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
             ) : (
@@ -733,7 +946,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         )}
                     </div>
                 )}
-
+                
                 {activeTab === 'ADD' && (
                     <div className="bg-white p-6 rounded-xl shadow-lg border border-emerald-100 animate-slide-up">
                         <div className="text-center mb-6">
@@ -763,6 +976,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             <Button 
                                 onClick={() => {
                                     if(newStudentName && newStudentCode) {
+                                        const exists = students.some(s => s.parentCode === newStudentCode);
+                                        if (exists) {
+                                            onShowNotification('هذا الكود مستخدم بالفعل لطالب آخر!', 'error');
+                                            return;
+                                        }
+
                                         onAddStudent(newStudentName, newStudentCode);
                                         setNewStudentName('');
                                         setNewStudentCode('');
@@ -776,7 +995,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </div>
                     </div>
                 )}
-
+                
                 {activeTab === 'STATS' && (
                     <div className="animate-slide-up space-y-4">
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
@@ -793,7 +1012,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {/* Present List */}
                             <div className="bg-white rounded-xl shadow-sm border-t-4 border-emerald-500 overflow-hidden">
                                 <div className="bg-emerald-50 p-3 border-b border-emerald-100 flex justify-between items-center">
                                     <h4 className="font-bold text-emerald-800">✅ الحضور</h4>
@@ -815,7 +1033,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                 </div>
                             </div>
 
-                            {/* Absent List */}
                             <div className="bg-white rounded-xl shadow-sm border-t-4 border-red-500 overflow-hidden">
                                 <div className="bg-red-50 p-3 border-b border-red-100 flex justify-between items-center">
                                     <h4 className="font-bold text-red-800">❌ الغياب</h4>
@@ -951,6 +1168,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
                 {activeTab === 'ANNOUNCEMENTS' && (
                     <div className="animate-slide-up space-y-4">
+                       {/* Announcement form code */}
                        <div className="bg-white p-4 rounded-lg shadow space-y-3 border-t-4 border-blue-500">
                            <h3 className="font-bold text-blue-800 text-lg">📢 إضافة إعلان جديد</h3>
                            <div>
@@ -993,14 +1211,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                </div>
                            )}
 
+                           {/* Competition logic */}
                            {announcementType === 'COMPETITION' && (
                                <div className="space-y-3 bg-amber-50 p-3 rounded-lg border border-amber-100">
                                    <h4 className="text-xs font-bold text-amber-800">جدول أيام المسابقة / الاختبار</h4>
-                                   
                                    {compDays.map((day, idx) => (
                                        <div key={day.id} className="bg-white p-3 rounded border border-amber-200 shadow-sm relative">
                                            {compDays.length > 1 && (
-                                               <button onClick={() => handleRemoveCompDay(day.id)} className="absolute top-2 left-2 text-red-400 hover:text-red-600 font-bold">×</button>
+                                               <button onClick={() => {
+                                                   if (compDays.length > 1) {
+                                                        setCompDays(compDays.filter(d => d.id !== day.id));
+                                                   }
+                                               }} className="absolute top-2 left-2 text-red-400 hover:text-red-600 font-bold">×</button>
                                            )}
                                            <div className="mb-2">
                                                <label className="block text-[10px] font-bold text-gray-500 mb-1">تاريخ اليوم {idx + 1}</label>
@@ -1008,7 +1230,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                                     type="date" 
                                                     className="w-full p-1 border rounded text-sm"
                                                     value={day.date}
-                                                    onChange={e => handleCompDateChange(day.id, e.target.value)}
+                                                    onChange={e => {
+                                                        setCompDays(compDays.map(d => d.id === day.id ? { ...d, date: e.target.value } : d));
+                                                    }}
                                                />
                                            </div>
                                            <div>
@@ -1040,7 +1264,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                    ))}
 
                                    <button 
-                                        onClick={handleAddCompDay} 
+                                        onClick={() => setCompDays([...compDays, { id: Date.now(), date: '', levels: [] }])} 
                                         className="w-full py-2 bg-white border border-dashed border-amber-400 text-amber-600 text-xs font-bold rounded hover:bg-amber-50"
                                    >
                                        + إضافة يوم آخر
@@ -1157,26 +1381,41 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <div className="bg-white rounded-xl shadow-lg p-5 border border-emerald-100 animate-fade-in">
                         <div className="flex justify-between items-center mb-4 border-b pb-2">
                             <h2 className="text-lg font-bold text-emerald-800 flex items-center gap-2">
-                                تسجيل تسميع اليوم
+                                {currentLogId ? "تعديل سجل اليوم" : "تسجيل تسميع اليوم"}
                                 <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">{logDate}</span>
                             </h2>
+                            {currentLogId && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded font-bold">وضع التعديل</span>}
                         </div>
                         
-                        <div className="grid grid-cols-2 gap-4 mb-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الحضور</label>
-                                <TimePicker value={attendance.arrivalTime} onChange={(v) => setAttendance({...attendance, arrivalTime: v})} />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 mb-1 block">وقت الانصراف</label>
-                                <TimePicker value={attendance.departureTime || ''} onChange={(v) => setAttendance({...attendance, departureTime: v})} />
-                            </div>
+                        <div className="mb-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                             <div className="flex justify-between items-center mb-2">
+                                <label className="text-xs font-bold text-gray-500 block">فترات الحضور والانصراف</label>
+                                <button onClick={handleAddAttendanceSlot} className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold hover:bg-emerald-200">+ إضافة فترة</button>
+                             </div>
+                             
+                             {attendanceRecords.map((record, index) => (
+                                 <div key={record.id} className="relative mb-3 last:mb-0 border-b last:border-0 border-gray-200 pb-3 last:pb-0">
+                                     {attendanceRecords.length > 1 && (
+                                         <button onClick={() => handleRemoveAttendanceSlot(record.id)} className="absolute left-0 top-0 text-red-400 hover:text-red-600 font-bold text-xs bg-white border border-red-100 px-1 rounded z-10">حذف</button>
+                                     )}
+                                     <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-400 mb-1 block">وقت الحضور {index + 1}</label>
+                                            <TimePicker value={record.arrival} onChange={(v) => handleAttendanceChange(record.id, 'arrival', v)} />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-gray-400 mb-1 block">وقت الانصراف {index + 1}</label>
+                                            <TimePicker value={record.departure || ''} onChange={(v) => handleAttendanceChange(record.id, 'departure', v)} />
+                                        </div>
+                                     </div>
+                                 </div>
+                             ))}
                         </div>
 
                         <AssignmentForm 
                             title="📖 الحفظ الجديد (تسميع)"
                             data={jadeed}
-                            onChange={(f, v) => setJadeed({ ...jadeed, [f]: v })}
+                            onChange={(f, v) => { setJadeed({ ...jadeed, [f]: v }); markAsDirty(); }}
                             colorClass="border-emerald-200 bg-emerald-50/50"
                         />
 
@@ -1184,7 +1423,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             <div className="flex justify-between items-center mb-2">
                                 <h4 className="font-bold text-gray-700 text-sm">🔄 المراجعة</h4>
                                 <button 
-                                    onClick={() => setMurajaahList([...murajaahList, { ...emptyAssignment, grade: Grade.VERY_GOOD }])}
+                                    onClick={() => { setMurajaahList([...murajaahList, { ...emptyAssignment, grade: Grade.VERY_GOOD }]); markAsDirty(); }}
                                     className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200 font-bold"
                                 >
                                     + إضافة
@@ -1199,10 +1438,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                         const newList = [...murajaahList];
                                         newList[idx] = { ...newList[idx], [f]: v };
                                         setMurajaahList(newList);
+                                        markAsDirty();
                                     }}
                                     colorClass="border-amber-200 bg-amber-50/50"
                                     canRemove
-                                    onRemove={() => setMurajaahList(murajaahList.filter((_, i) => i !== idx))}
+                                    onRemove={() => { setMurajaahList(murajaahList.filter((_, i) => i !== idx)); markAsDirty(); }}
                                 />
                             ))}
                         </div>
@@ -1210,10 +1450,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         <div className="mb-4">
                             <label className="text-xs font-bold text-gray-500 mb-1 block">ملاحظات / رسالة لولي الأمر</label>
                             <textarea 
-                                className="w-full p-3 border rounded-lg text-sm h-24 mb-2 focus:ring-2 focus:ring-emerald-500 outline-none"
+                                className="w-full p-3 border rounded-lg text-sm h-32 mb-2 focus:ring-2 focus:ring-emerald-500 outline-none"
                                 placeholder="اكتب ملاحظاتك هنا..."
                                 value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
+                                onChange={(e) => { setNotes(e.target.value); markAsDirty(); }}
                             ></textarea>
                             
                             <div className="flex flex-col gap-2">
@@ -1222,7 +1462,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                     className="w-full text-xs py-2 bg-purple-600 hover:bg-purple-700 flex justify-center shadow-md"
                                     isLoading={isGeneratingMessage}
                                 >
-                                    ✨ توليد رسالة تشجيعية (تلقائي)
+                                    ✨ اقتراح رسالة تشجيعية (تلقائي)
                                 </Button>
                                 {selectedStudent.parentPhone && (
                                     <button 
@@ -1238,11 +1478,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </div>
 
                         <Button onClick={handleSaveLog} className="w-full py-4 text-lg shadow-xl mb-4 bg-emerald-700 hover:bg-emerald-800">
-                            💾 حفظ السجل
+                            {currentLogId ? "💾 تحديث السجل" : "💾 حفظ السجل"}
                         </Button>
                     </div>
                 )}
-
+                
+                {/* ... existing PLAN, ARCHIVE, CALC, SCHEDULE, FEES tabs ... */}
                 {studentTab === 'PLAN' && (
                     <div className="bg-white rounded-xl shadow-lg p-5 border border-blue-100 relative overflow-hidden animate-fade-in">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 to-cyan-300"></div>
@@ -1291,7 +1532,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </Button>
                     </div>
                 )}
-
                 {studentTab === 'ARCHIVE' && (
                     <div className="bg-white rounded-xl shadow-lg p-4 animate-fade-in">
                         <h3 className="font-bold text-gray-800 mb-4 text-lg border-b pb-2 flex items-center gap-2">🗄️ سجل التسميع السابق</h3>
@@ -1323,7 +1563,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                                     <div className="flex items-center gap-2 bg-emerald-50 p-2 rounded border border-emerald-100">
                                                         <span className="text-emerald-600 font-bold">الحفظ:</span>
                                                         <span className="text-gray-800 flex-1">
-                                                            {log.jadeed.type === 'SURAH' ? `سورة ${log.jadeed.name} (${log.jadeed.ayahFrom}-${log.jadeed.ayahTo})` : log.jadeed.name}
+                                                            {log.jadeed.type === 'MULTI' ? `متعدد: ${log.jadeed.multiSurahs?.join('، ')}` : log.jadeed.type === 'SURAH' ? `سورة ${log.jadeed.name} (${log.jadeed.ayahFrom}-${log.jadeed.ayahTo})` : log.jadeed.name}
                                                         </span>
                                                         <span className={`text-[10px] px-2 py-0.5 rounded text-white ${log.jadeed.grade === Grade.EXCELLENT ? 'bg-emerald-500' : 'bg-blue-500'}`}>{log.jadeed.grade}</span>
                                                     </div>
@@ -1334,7 +1574,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                                         <div className="space-y-1">
                                                             {log.murajaah.map((m, i) => (
                                                                 <div key={i} className="flex justify-between text-gray-700 text-xs">
-                                                                    <span>• {m.name}</span>
+                                                                    <span>• {m.type === 'MULTI' ? `متعدد: ${m.multiSurahs?.join('، ')}` : m.name}</span>
                                                                     <span className="font-bold">{m.grade}</span>
                                                                 </div>
                                                             ))}
@@ -1352,7 +1592,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         )}
                     </div>
                 )}
-
                 {studentTab === 'CALC' && (
                     <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in">
                         <h3 className="font-bold text-gray-800 mb-4 text-lg flex items-center gap-2">🧮 حاسبة إنجاز الشهر</h3>
@@ -1401,7 +1640,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </div>
                     </div>
                 )}
-
                 {studentTab === 'SCHEDULE' && (
                     <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in">
                         <h3 className="font-bold text-gray-800 mb-4 text-lg">⏰ جدول الطالب والأنشطة</h3>
@@ -1431,7 +1669,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                         </div>
                     </div>
                 )}
-
                 {studentTab === 'FEES' && (
                     <div className="bg-white rounded-xl shadow-lg p-5 animate-fade-in">
                         <h3 className="font-bold text-gray-800 mb-4 text-lg">💰 الرسوم والمدفوعات</h3>
