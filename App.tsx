@@ -11,13 +11,15 @@ import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
   collection, 
-  setDoc,      // نستخدم setDoc بدلاً من addDoc للتحكم في ID
+  setDoc,
   deleteDoc, 
   doc, 
   onSnapshot,
   query,
   orderBy
 } from 'firebase/firestore';
+// إضافة مكتبة المصادقة (Auth) لحل مشكلة الاتصال
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
 // --- 2. إعدادات الاتصال (بيانات دار التوحيد الحقيقية) ---
 const firebaseConfig = {
@@ -33,6 +35,7 @@ const firebaseConfig = {
 // تهيئة فايربيز
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app); // تهيئة المصادقة
 
 // --- مكون الشعار ---
 const Logo = ({ title }: { title: string }) => (
@@ -58,7 +61,7 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
     <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-slide-down min-w-[300px] justify-center ${
       type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
     }`}>
-      <span className="text-2xl">{type === 'success' ? '✅' : ⚠️'}</span>
+      <span className="text-2xl">{type === 'success' ? '✅' : '⚠️'}</span>
       <span className="font-bold">{message}</span>
     </div>
   );
@@ -71,53 +74,13 @@ const normalizeArabicNumbers = (str: string) => {
 
 const App: React.FC = () => {
   // --- تحميل البيانات والحالة (من فايربيز الآن) ---
-  
-  // الحالة المبدئية فارغة حتى تأتي البيانات من السيرفر
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
-  // اسم الدار يفضل أن يبقى محلياً أو ينقل لقاعدة البيانات لاحقاً، سنبقيه محلياً للتبسيط الآن
   const [organizationName, setOrganizationName] = useState(() => {
       return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
   });
-
-  // --- 3. جلب البيانات (Real-time Sync) ---
-  useEffect(() => {
-    // جلب الطلاب
-    const qStudents = query(collection(db, "students"));
-    const unsubStudents = onSnapshot(qStudents, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Student);
-      setStudents(data);
-    });
-
-    // جلب المعلمين
-    const qTeachers = query(collection(db, "teachers"));
-    const unsubTeachers = onSnapshot(qTeachers, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Teacher);
-      setTeachers(data);
-    });
-
-    // جلب الإعلانات
-    const qAnnouncements = query(collection(db, "announcements")); // يمكن إضافة ترتيب هنا
-    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Announcement);
-      // ترتيب الإعلانات يدوياً بالأحدث إذا لم نرتبها في الاستعلام
-      data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setAnnouncements(data);
-    });
-
-    return () => {
-      unsubStudents();
-      unsubTeachers();
-      unsubAnnouncements();
-    };
-  }, []);
-
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_org_name', organizationName);
-      document.title = `${organizationName} - متابعة القرآن الكريم`;
-  }, [organizationName]);
 
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
@@ -126,13 +89,85 @@ const App: React.FC = () => {
   };
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  
+  const [isAuthReady, setIsAuthReady] = useState(false); // حالة التأكد من الاتصال بفايربيز
+
+  // --- تهيئة الاتصال والمصادقة ---
   useEffect(() => {
-      const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
-      const handleOffline = () => setIsOnline(false);
-      window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
-      return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
+    // 1. تسجيل الدخول الصامت (Anonymous) للسماح بقراءة البيانات
+    const signIn = async () => {
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("Auth Error:", error);
+        showNotification("خطأ في الاتصال بالسيرفر (Auth)", "error");
+      }
+    };
+    signIn();
+
+    // مراقبة حالة المصادقة
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsAuthReady(true);
+        console.log("Connected to Firebase as:", user.uid);
+      }
+    });
+
+    // مراقبة الإنترنت
+    const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+
+    return () => { 
+      unsubscribeAuth();
+      window.removeEventListener('online', handleOnline); 
+      window.removeEventListener('offline', handleOffline); 
+    };
   }, []);
+
+
+  // --- 3. جلب البيانات (Real-time Sync) ---
+  // لا نبدأ الجلب إلا بعد التأكد من المصادقة (isAuthReady)
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    // جلب الطلاب
+    const qStudents = query(collection(db, "students"));
+    const unsubStudents = onSnapshot(qStudents, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as Student);
+      setStudents(data);
+    }, (error) => {
+      console.error("Students Error:", error);
+      if (error.code === 'permission-denied') {
+        showNotification("لا تملك صلاحية قراءة الطلاب (تأكد من Rules)", "error");
+      }
+    });
+
+    // جلب المعلمين
+    const qTeachers = query(collection(db, "teachers"));
+    const unsubTeachers = onSnapshot(qTeachers, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as Teacher);
+      setTeachers(data);
+    }, (error) => console.error("Teachers Error:", error));
+
+    // جلب الإعلانات
+    const qAnnouncements = query(collection(db, "announcements"));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as Announcement);
+      data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      setAnnouncements(data);
+    }, (error) => console.error("Announcements Error:", error));
+
+    return () => {
+      unsubStudents();
+      unsubTeachers();
+      unsubAnnouncements();
+    };
+  }, [isAuthReady]); // يعتمد على جاهزية المصادقة
+
+  useEffect(() => {
+      localStorage.setItem('muhaffiz_org_name', organizationName);
+      document.title = `${organizationName} - متابعة القرآن الكريم`;
+  }, [organizationName]);
 
   // PWA Install Logic
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
