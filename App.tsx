@@ -53,12 +53,12 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
-    }, 3000);
+    }, 4000); // زيادة الوقت قليلاً لقراءة الخطأ
     return () => clearTimeout(timer);
   }, [onClose]);
 
   return (
-    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-slide-down min-w-[300px] justify-center ${
+    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-slide-down min-w-[300px] justify-center text-center ${
       type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
     }`}>
       <span className="text-2xl">{type === 'success' ? '✅' : '⚠️'}</span>
@@ -93,15 +93,24 @@ const App: React.FC = () => {
 
   // --- تهيئة الاتصال والمصادقة ---
   useEffect(() => {
-    // 1. تسجيل الدخول الصامت (Anonymous) للسماح بقراءة البيانات
+    // 1. تسجيل الدخول الصامت (Anonymous)
     const signIn = async () => {
       try {
         await signInAnonymously(auth);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Auth Error:", error);
-        showNotification("خطأ في الاتصال بالسيرفر (Auth)", "error");
+        // عرض رسالة خطأ واضحة جداً للمستخدم
+        let errorMsg = "خطأ في الاتصال بالسيرفر.";
+        if (error.code === 'auth/operation-not-allowed') {
+          errorMsg = "يجب تفعيل 'Anonymous Auth' من إعدادات فايربيز";
+        } else if (error.code === 'auth/network-request-failed') {
+          errorMsg = "مشكلة في الإنترنت، تأكد من اتصالك";
+        }
+        showNotification(errorMsg, "error");
       }
     };
+    
+    // البدء بعملية الدخول
     signIn();
 
     // مراقبة حالة المصادقة
@@ -109,6 +118,8 @@ const App: React.FC = () => {
       if (user) {
         setIsAuthReady(true);
         console.log("Connected to Firebase as:", user.uid);
+      } else {
+        setIsAuthReady(false);
       }
     });
 
@@ -138,7 +149,7 @@ const App: React.FC = () => {
     }, (error) => {
       console.error("Students Error:", error);
       if (error.code === 'permission-denied') {
-        showNotification("لا تملك صلاحية قراءة الطلاب (تأكد من Rules)", "error");
+        showNotification("خطأ صلاحيات: تأكد من إعدادات Firestore Rules", "error");
       }
     });
 
@@ -147,7 +158,10 @@ const App: React.FC = () => {
     const unsubTeachers = onSnapshot(qTeachers, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Teacher);
       setTeachers(data);
-    }, (error) => console.error("Teachers Error:", error));
+    }, (error) => {
+       console.error("Teachers Error:", error);
+       // لا نزعج المستخدم برسائل متكررة إلا للضرورة
+    });
 
     // جلب الإعلانات
     const qAnnouncements = query(collection(db, "announcements"));
@@ -155,7 +169,7 @@ const App: React.FC = () => {
       const data = snapshot.docs.map(doc => doc.data() as Announcement);
       data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setAnnouncements(data);
-    }, (error) => console.error("Announcements Error:", error));
+    });
 
     return () => {
       unsubStudents();
@@ -400,22 +414,37 @@ const App: React.FC = () => {
       try {
           await setDoc(doc(db, "teachers", newTeacher.id), newTeacher);
           showNotification('تم إضافة المحفظ بنجاح'); 
-      } catch (error) { showNotification('خطأ في الإضافة', 'error'); }
+      } catch (error: any) { 
+        console.error("Add Teacher Error:", error);
+        if (error.code === 'permission-denied') {
+          showNotification('خطأ: ليس لديك صلاحية الكتابة في قاعدة البيانات', 'error'); 
+        } else {
+          showNotification('خطأ في الإضافة: ' + error.message, 'error'); 
+        }
+      }
   };
 
   const updateTeacher = async (id: string, name: string, loginCode: string) => { 
       const teacher = teachers.find(t => t.id === id);
       if (teacher) {
           const updated = { ...teacher, name, loginCode };
-          await setDoc(doc(db, "teachers", id), updated);
-          showNotification('تم تعديل بيانات المحفظ بنجاح'); 
+          try {
+            await setDoc(doc(db, "teachers", id), updated);
+            showNotification('تم تعديل بيانات المحفظ بنجاح');
+          } catch (e) {
+            showNotification('فشل التعديل', 'error');
+          }
       }
   };
 
   const deleteTeacher = async (id: string) => { 
       if(!window.confirm("حذف المعلم سيحذف صلاحية دخوله، هل أنت متأكد؟")) return;
-      await deleteDoc(doc(db, "teachers", id));
-      showNotification('تم حذف المحفظ بنجاح'); 
+      try {
+        await deleteDoc(doc(db, "teachers", id));
+        showNotification('تم حذف المحفظ بنجاح'); 
+      } catch (e) {
+        showNotification('فشل الحذف', 'error');
+      }
   };
 
   const markLogsAsSeen = async (studentId: string, logIds: string[]) => { 
