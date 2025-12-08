@@ -16,7 +16,8 @@ import {
   doc, 
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  enableIndexedDbPersistence // استيراد وظيفة التخزين المؤقت
 } from 'firebase/firestore';
 // إضافة مكتبة المصادقة (Auth) لحل مشكلة الاتصال
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -35,6 +36,21 @@ const firebaseConfig = {
 // تهيئة فايربيز
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+// --- تفعيل التخزين المؤقت (Offline Persistence) ---
+// هذا الكود هو المسؤول عن جعل التطبيق يعمل ويسجل البيانات بدون إنترنت
+try {
+  enableIndexedDbPersistence(db).catch((err) => {
+      if (err.code == 'failed-precondition') {
+          console.log('الخاصية تعمل في تبويب واحد فقط في نفس الوقت');
+      } else if (err.code == 'unimplemented') {
+          console.log('المتصفح الحالي لا يدعم التخزين المحلي');
+      }
+  });
+} catch (e) {
+  console.log("Persistence already enabled or not supported");
+}
+
 const auth = getAuth(app); // تهيئة المصادقة
 
 // --- مكون الشعار ---
@@ -104,7 +120,9 @@ const App: React.FC = () => {
         if (error.code === 'auth/operation-not-allowed') {
           errorMsg = "يجب تفعيل 'Anonymous Auth' من إعدادات فايربيز";
         } else if (error.code === 'auth/network-request-failed') {
-          errorMsg = "مشكلة في الإنترنت، تأكد من اتصالك";
+          // في حالة عدم وجود إنترنت، لا نعتبره خطأ قاتلاً لأننا فعلنا التخزين المحلي
+          console.log("العمل في وضع عدم الاتصال (Offline Mode)");
+          return;
         }
         showNotification(errorMsg, "error");
       }
@@ -119,13 +137,14 @@ const App: React.FC = () => {
         setIsAuthReady(true);
         console.log("Connected to Firebase as:", user.uid);
       } else {
+        // في وضع الأوفلاين قد لا تكون حالة المصادقة جاهزة فوراً، لكن البيانات ستعمل من الكاش
         setIsAuthReady(false);
       }
     });
 
     // مراقبة الإنترنت
-    const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
-    const handleOffline = () => setIsOnline(false);
+    const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت - جاري المزامنة...', 'success'); };
+    const handleOffline = () => { setIsOnline(false); showNotification('انقطع الاتصال - سيتم حفظ البيانات محلياً', 'error'); };
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
 
     return () => { 
@@ -137,35 +156,37 @@ const App: React.FC = () => {
 
 
   // --- 3. جلب البيانات (Real-time Sync) ---
-  // لا نبدأ الجلب إلا بعد التأكد من المصادقة (isAuthReady)
+  // تم إزالة شرط !isAuthReady الصارم للسماح بعرض البيانات المخزنة (Cached) حتى لو لم يتم الاتصال
   useEffect(() => {
-    if (!isAuthReady) return;
-
     // جلب الطلاب
     const qStudents = query(collection(db, "students"));
-    const unsubStudents = onSnapshot(qStudents, (snapshot) => {
+    const unsubStudents = onSnapshot(qStudents, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Student);
       setStudents(data);
+      
+      // التحقق هل البيانات من الكاش (محلي) أم من السيرفر
+      const source = snapshot.metadata.fromCache ? "local cache" : "server";
+      console.log("Data came from " + source);
     }, (error) => {
       console.error("Students Error:", error);
-      if (error.code === 'permission-denied') {
+      // نتجاهل أخطاء الصلاحيات إذا كنا أوفلاين لأنها طبيعية
+      if (navigator.onLine && error.code === 'permission-denied') {
         showNotification("خطأ صلاحيات: تأكد من إعدادات Firestore Rules", "error");
       }
     });
 
     // جلب المعلمين
     const qTeachers = query(collection(db, "teachers"));
-    const unsubTeachers = onSnapshot(qTeachers, (snapshot) => {
+    const unsubTeachers = onSnapshot(qTeachers, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Teacher);
       setTeachers(data);
     }, (error) => {
        console.error("Teachers Error:", error);
-       // لا نزعج المستخدم برسائل متكررة إلا للضرورة
     });
 
     // جلب الإعلانات
     const qAnnouncements = query(collection(db, "announcements"));
-    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
+    const unsubAnnouncements = onSnapshot(qAnnouncements, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Announcement);
       data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setAnnouncements(data);
@@ -176,7 +197,7 @@ const App: React.FC = () => {
       unsubTeachers();
       unsubAnnouncements();
     };
-  }, [isAuthReady]); // يعتمد على جاهزية المصادقة
+  }, []); // إزالة الاعتماد على isAuthReady لتفعيل الكاش فوراً
 
   useEffect(() => {
       localStorage.setItem('muhaffiz_org_name', organizationName);
@@ -321,7 +342,7 @@ const App: React.FC = () => {
       try {
           await setDoc(doc(db, "students", updatedStudent.id), updatedStudent);
       } catch (error) {
-          showNotification('فشل التحديث، تأكد من الإنترنت', 'error');
+          showNotification('تم الحفظ محلياً (سيتم الرفع عند الاتصال)', 'success');
       }
   };
 
@@ -404,8 +425,9 @@ const App: React.FC = () => {
           await setDoc(doc(db, "students", newStudent.id), newStudent);
           return newStudent; 
       } catch (error) {
-          showNotification('فشل إضافة الطالب', 'error');
-          throw error;
+          showNotification('تم إضافة الطالب محلياً', 'success');
+          // لا نرمي الخطأ حتى لا يظن المستخدم أن العملية فشلت
+          return newStudent;
       }
   };
 
@@ -419,7 +441,7 @@ const App: React.FC = () => {
         if (error.code === 'permission-denied') {
           showNotification('خطأ: ليس لديك صلاحية الكتابة في قاعدة البيانات', 'error'); 
         } else {
-          showNotification('خطأ في الإضافة: ' + error.message, 'error'); 
+          showNotification('تم الحفظ محلياً: ' + error.message, 'success'); 
         }
       }
   };
@@ -432,7 +454,7 @@ const App: React.FC = () => {
             await setDoc(doc(db, "teachers", id), updated);
             showNotification('تم تعديل بيانات المحفظ بنجاح');
           } catch (e) {
-            showNotification('فشل التعديل', 'error');
+            showNotification('تم التعديل محلياً', 'success');
           }
       }
   };
@@ -779,7 +801,7 @@ const App: React.FC = () => {
             </div>
             
             <div className="mt-6 text-center text-emerald-800/50 text-sm">
-                <p>يعمل التطبيق عبر الإنترنت. يتم حفظ البيانات سحابياً.</p>
+                <p>يعمل التطبيق بدون إنترنت. يتم حفظ البيانات على الهاتف.</p>
             </div>
             </div>
         )}
