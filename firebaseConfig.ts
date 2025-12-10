@@ -1,5 +1,6 @@
-
-const firebaseConfig = {
+// مفاتيح الاتصال بفايربيز - دار التوحيد
+// أضفنا كلمة export هنا ليتمكن التطبيق من قراءة الملف
+export const firebaseConfig = {
   apiKey: "AIzaSyBy9-kDy0JnunaSubLm-VhliTGhP2jZs6o",
   authDomain: "dar-altawheed.firebaseapp.com",
   projectId: "dar-altawheed",
