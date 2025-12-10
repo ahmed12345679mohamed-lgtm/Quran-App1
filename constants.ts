@@ -1,7 +1,8 @@
 
+
 import { Student, Grade, Teacher, Announcement, DailyLog, QuranAssignment } from './types';
 
-export const APP_VERSION = "2.9.0"; // Bump version
+export const APP_VERSION = "2.9.5"; // Bump version
 
 export const MONTHS_LIST = [
   "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
@@ -161,11 +162,20 @@ export const formatTime12Hour = (time24: string) => {
 
 export const formatDateDual = (dateIso: string) => {
     const d = new Date(dateIso);
-    const gregorian = d.toLocaleDateString('en-GB'); 
+    // Format: DD/MM/YYYY
+    const gregorian = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const hijri = new Intl.DateTimeFormat('ar-TN-u-ca-islamic', {
         day: 'numeric', month: 'long', year: 'numeric'
     }).format(d);
     return { gregorian, hijri };
+};
+
+export const formatSimpleDate = (dateIso: string) => {
+    return new Date(dateIso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+export const formatDateWithDay = (dateIso: string) => {
+    return new Date(dateIso).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
 };
 
 export const ENCOURAGEMENT_MESSAGES = {
@@ -226,10 +236,12 @@ const generateLogsForStudent = (teacherId: string, teacherName: string): DailyLo
                 isAbsent: false,
                 isAdab: true,
                 adabSession: {
+                    id: 'adab_' + logId, // Added ID
+                    date: date.toISOString(), // Added Date
                     title: "مجلس آداب عام",
                     quizzes: [
                         { id: 'q1', question: mockQ1.q, correctAnswer: mockQ1.c, wrongAnswers: mockQ1.w },
-                        { id: 'q2', question: mockQ2.q, correctAnswer: mockQ2.c, wrongAnswers: mockQ2.w }
+                        { id: 'q2', question: mockQ2.q, correctAnswer: mockQ2.c, wrongAnswers: mockQ1.w }
                     ]
                 },
                 parentQuizScore: Math.random() > 0.5 ? 2 : 1, 

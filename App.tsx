@@ -1,59 +1,15 @@
+
+
+
 import React, { useState, useEffect } from 'react';
-import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem } from './types';
+import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem, AdabSession } from './types';
 import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from './constants';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { ParentDashboard } from './components/ParentDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Button } from './components/Button';
 
-// --- 1. استيراد مكتبات فايربيز ---
-import { initializeApp } from 'firebase/app';
-import { 
-  getFirestore, 
-  collection, 
-  setDoc,
-  deleteDoc, 
-  doc, 
-  onSnapshot,
-  query,
-  orderBy,
-  enableIndexedDbPersistence // استيراد وظيفة التخزين المؤقت
-} from 'firebase/firestore';
-// إضافة مكتبة المصادقة (Auth) لحل مشكلة الاتصال
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-
-// --- 2. إعدادات الاتصال (بيانات دار التوحيد الحقيقية) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBy9-kDy0JnunaSubLm-VhliTGhP2jZs6o",
-  authDomain: "dar-altawheed.firebaseapp.com",
-  projectId: "dar-altawheed",
-  storageBucket: "dar-altawheed.firebasestorage.app",
-  messagingSenderId: "1090036818546",
-  appId: "1:1090036818546:web:2439dbc444658f5c4698eb",
-  measurementId: "G-3DVF71VRBN"
-};
-
-// تهيئة فايربيز
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- تفعيل التخزين المؤقت (Offline Persistence) ---
-// هذا الكود هو المسؤول عن جعل التطبيق يعمل ويسجل البيانات بدون إنترنت
-try {
-  enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code == 'failed-precondition') {
-          console.log('الخاصية تعمل في تبويب واحد فقط في نفس الوقت');
-      } else if (err.code == 'unimplemented') {
-          console.log('المتصفح الحالي لا يدعم التخزين المحلي');
-      }
-  });
-} catch (e) {
-  console.log("Persistence already enabled or not supported");
-}
-
-const auth = getAuth(app); // تهيئة المصادقة
-
-// --- مكون الشعار ---
+// Logo Component with Dynamic Title
 const Logo = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center mb-8">
     <div className="w-24 h-24 bg-emerald-600 rounded-full flex items-center justify-center text-4xl shadow-lg mb-4 border-4 border-white animate-bounce-in">
@@ -64,17 +20,16 @@ const Logo = ({ title }: { title: string }) => (
   </div>
 );
 
-// --- مكون التنبيهات ---
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
-    }, 4000); // زيادة الوقت قليلاً لقراءة الخطأ
+    }, 3000);
     return () => clearTimeout(timer);
   }, [onClose]);
 
   return (
-    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-slide-down min-w-[300px] justify-center text-center ${
+    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 animate-slide-down min-w-[300px] justify-center ${
       type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
     }`}>
       <span className="text-2xl">{type === 'success' ? '✅' : '⚠️'}</span>
@@ -83,20 +38,42 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
   );
 };
 
-// دالة توحيد الأرقام العربية والإنجليزية
 const normalizeArabicNumbers = (str: string) => {
   return str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
 };
 
 const App: React.FC = () => {
-  // --- تحميل البيانات والحالة (من فايربيز الآن) ---
-  const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  // --- DATA LOADING & STATE ---
+  // RESET TO CLASSIC VERSION v100
+  const [students, setStudents] = useState<Student[]>(() => {
+    const saved = localStorage.getItem('muhaffiz_students_v100');
+    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
+  });
+
+  const [teachers, setTeachers] = useState<Teacher[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_teachers_v100');
+      return saved ? JSON.parse(saved) : INITIAL_TEACHERS;
+  });
+
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_announcements_v100');
+      return saved ? JSON.parse(saved) : [];
+  });
+  
+  // New Adab Archive State
+  const [adabArchive, setAdabArchive] = useState<AdabSession[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_adab_archive');
+      return saved ? JSON.parse(saved) : [];
+  });
 
   const [organizationName, setOrganizationName] = useState(() => {
       return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
   });
+
+  useEffect(() => {
+      localStorage.setItem('muhaffiz_org_name', organizationName);
+      document.title = `${organizationName} - متابعة القرآن الكريم`;
+  }, [organizationName]);
 
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
@@ -105,106 +82,14 @@ const App: React.FC = () => {
   };
 
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isAuthReady, setIsAuthReady] = useState(false); // حالة التأكد من الاتصال بفايربيز
-
-  // --- تهيئة الاتصال والمصادقة ---
+  
   useEffect(() => {
-    // 1. تسجيل الدخول الصامت (Anonymous)
-    const signIn = async () => {
-      try {
-        await signInAnonymously(auth);
-      } catch (error: any) {
-        console.error("Auth Error:", error);
-        // عرض رسالة خطأ واضحة جداً للمستخدم
-        let errorMsg = "خطأ في الاتصال بالسيرفر.";
-        if (error.code === 'auth/operation-not-allowed') {
-          errorMsg = "يجب تفعيل 'Anonymous Auth' من إعدادات فايربيز";
-        } else if (error.code === 'auth/network-request-failed') {
-          // في حالة عدم وجود إنترنت، لا نعتبره خطأ قاتلاً لأننا فعلنا التخزين المحلي
-          console.log("العمل في وضع عدم الاتصال (Offline Mode)");
-          return;
-        }
-        showNotification(errorMsg, "error");
-      }
-    };
-    
-    // البدء بعملية الدخول
-    signIn();
-
-    // مراقبة حالة المصادقة
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setIsAuthReady(true);
-        console.log("Connected to Firebase as:", user.uid);
-      } else {
-        // في وضع الأوفلاين قد لا تكون حالة المصادقة جاهزة فوراً، لكن البيانات ستعمل من الكاش
-        setIsAuthReady(false);
-      }
-    });
-
-    // مراقبة الإنترنت
-    const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت - جاري المزامنة...', 'success'); };
-    const handleOffline = () => { setIsOnline(false); showNotification('انقطع الاتصال - سيتم حفظ البيانات محلياً', 'error'); };
-    window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
-
-    return () => { 
-      unsubscribeAuth();
-      window.removeEventListener('online', handleOnline); 
-      window.removeEventListener('offline', handleOffline); 
-    };
+      const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
+      const handleOffline = () => setIsOnline(false);
+      window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
+      return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-
-  // --- 3. جلب البيانات (Real-time Sync) ---
-  // تم إزالة شرط !isAuthReady الصارم للسماح بعرض البيانات المخزنة (Cached) حتى لو لم يتم الاتصال
-  useEffect(() => {
-    // جلب الطلاب
-    const qStudents = query(collection(db, "students"));
-    const unsubStudents = onSnapshot(qStudents, { includeMetadataChanges: true }, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Student);
-      setStudents(data);
-      
-      // التحقق هل البيانات من الكاش (محلي) أم من السيرفر
-      const source = snapshot.metadata.fromCache ? "local cache" : "server";
-      console.log("Data came from " + source);
-    }, (error) => {
-      console.error("Students Error:", error);
-      // نتجاهل أخطاء الصلاحيات إذا كنا أوفلاين لأنها طبيعية
-      if (navigator.onLine && error.code === 'permission-denied') {
-        showNotification("خطأ صلاحيات: تأكد من إعدادات Firestore Rules", "error");
-      }
-    });
-
-    // جلب المعلمين
-    const qTeachers = query(collection(db, "teachers"));
-    const unsubTeachers = onSnapshot(qTeachers, { includeMetadataChanges: true }, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Teacher);
-      setTeachers(data);
-    }, (error) => {
-       console.error("Teachers Error:", error);
-    });
-
-    // جلب الإعلانات
-    const qAnnouncements = query(collection(db, "announcements"));
-    const unsubAnnouncements = onSnapshot(qAnnouncements, { includeMetadataChanges: true }, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as Announcement);
-      data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setAnnouncements(data);
-    });
-
-    return () => {
-      unsubStudents();
-      unsubTeachers();
-      unsubAnnouncements();
-    };
-  }, []); // إزالة الاعتماد على isAuthReady لتفعيل الكاش فوراً
-
-  useEffect(() => {
-      localStorage.setItem('muhaffiz_org_name', organizationName);
-      document.title = `${organizationName} - متابعة القرآن الكريم`;
-  }, [organizationName]);
-
-  // PWA Install Logic
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
 
@@ -223,31 +108,35 @@ const App: React.FC = () => {
     if (outcome === 'accepted') { setDeferredPrompt(null); }
   };
 
-  // Login & View State
-  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, currentUser: { role: 'GUEST' } });
-  
-  // تحديث حالة التطبيق كلما تغيرت البيانات القادمة من فايربيز
-  useEffect(() => {
-    setAppState(prev => ({
-        ...prev,
-        students: students,
-        teachers: teachers,
-        announcements: announcements
-    }));
-  }, [students, teachers, announcements]);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
 
+  useEffect(() => {
+    const storedVersion = localStorage.getItem('app_version');
+    if (storedVersion && storedVersion !== APP_VERSION) { setUpdateAvailable(true); }
+    localStorage.setItem('app_version', APP_VERSION);
+  }, []);
+
+  useEffect(() => { localStorage.setItem('muhaffiz_students_v100', JSON.stringify(students)); }, [students]);
+  useEffect(() => { localStorage.setItem('muhaffiz_teachers_v100', JSON.stringify(teachers)); }, [teachers]);
+  useEffect(() => { localStorage.setItem('muhaffiz_announcements_v100', JSON.stringify(announcements)); }, [announcements]);
+  useEffect(() => { localStorage.setItem('muhaffiz_adab_archive', JSON.stringify(adabArchive)); }, [adabArchive]);
+
+  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, adabArchive: adabArchive, currentUser: { role: 'GUEST' } });
+
+  // --- LOGIN & NAVIGATION STATE ---
   const [loginView, setLoginView] = useState<'SELECTION' | 'PARENT' | 'TEACHER' | 'ADMIN'>('SELECTION');
+  
   const [parentCodeInput, setParentCodeInput] = useState('');
   const [parentPhoneInput, setParentPhoneInput] = useState('');
   const [parentSelectedTeacher, setParentSelectedTeacher] = useState('');
   const [showPhoneSetup, setShowPhoneSetup] = useState(false);
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
+  
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [teacherCodeInput, setTeacherCodeInput] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // --- دوال تسجيل الدخول (كما هي) ---
   const handleTeacherLogin = (e: React.FormEvent) => { 
       e.preventDefault(); 
       const teacher = teachers.find(t => t.id === selectedTeacherId); 
@@ -269,6 +158,8 @@ const App: React.FC = () => {
       if (!parentSelectedTeacher) { setLoginError('يرجى اختيار المعلم أولاً'); return; } 
       
       const cleanCode = normalizeArabicNumbers(parentCodeInput.trim());
+      
+      // Strict check: Teacher + Code must match
       const student = students.find(s => s.parentCode === cleanCode && s.teacherId === parentSelectedTeacher); 
       
       if (student) { 
@@ -290,7 +181,7 @@ const App: React.FC = () => {
       } 
   };
   
-  const handleCompleteParentProfile = async (e: React.FormEvent) => { 
+  const handleCompleteParentProfile = (e: React.FormEvent) => { 
       e.preventDefault(); 
       const cleanPhone = normalizeArabicNumbers(parentPhoneInput.trim());
       if (!cleanPhone || cleanPhone.length < 10) { setLoginError('يرجى كتابة رقم هاتف صحيح'); return; } 
@@ -298,17 +189,11 @@ const App: React.FC = () => {
       if (pendingStudentId) { 
           const student = students.find(s => s.id === pendingStudentId); 
           if (student) { 
-              // تحديث رقم الهاتف في فايربيز
-              const updatedStudent = { ...student, parentPhone: cleanPhone };
-              try {
-                  await setDoc(doc(db, "students", student.id), updatedStudent);
-                  setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
-                  setShowPhoneSetup(false); 
-                  setPendingStudentId(null); 
-              } catch (error) {
-                  console.error(error);
-                  setLoginError("حدث خطأ في الاتصال، حاول مرة أخرى");
-              }
+              const newStudents = students.map(s => s.id === student.id ? { ...s, parentPhone: cleanPhone } : s); 
+              setStudents(newStudents); 
+              setAppState(prev => ({ ...prev, currentUser: { role: 'PARENT', id: student.id, name: student.name } })); 
+              setShowPhoneSetup(false); 
+              setPendingStudentId(null); 
           } 
       } 
   };
@@ -336,174 +221,72 @@ const App: React.FC = () => {
       setShowPhoneSetup(false); 
   };
 
-  // --- 4. عمليات البيانات (تعديل لتستخدم فايربيز) ---
+  // --- DATA OPERATIONS ---
+  const updateStudent = (updatedStudent: Student) => { const newStudents = students.map(s => s.id === updatedStudent.id ? updatedStudent : s); setStudents(newStudents); };
+  const deleteStudents = (studentIds: string[]) => { setStudents(prevStudents => { const remaining = prevStudents.filter(s => !studentIds.includes(s.id)); return [...remaining]; }); showNotification('تم حذف الطالب بنجاح'); };
   
-  const updateStudent = async (updatedStudent: Student) => { 
-      try {
-          await setDoc(doc(db, "students", updatedStudent.id), updatedStudent);
-      } catch (error) {
-          showNotification('تم الحفظ محلياً (سيتم الرفع عند الاتصال)', 'success');
-      }
-  };
-
-  const deleteStudents = async (studentIds: string[]) => { 
-      if(!window.confirm("هل أنت متأكد من حذف الطلاب المحددين؟")) return;
-      try {
-          // حذف كل طالب على حدة
-          for (const id of studentIds) {
-              await deleteDoc(doc(db, "students", id));
-          }
-          showNotification('تم حذف الطلاب بنجاح'); 
-      } catch (error) {
-          showNotification('حدث خطأ أثناء الحذف', 'error');
-      }
-  };
-  
-  const markRemainingStudentsAbsent = async (specificIds?: string[]) => { 
+  const markRemainingStudentsAbsent = () => { 
     const teacherId = appState.currentUser.id || 'unknown'; 
     const teacherName = appState.currentUser.name || 'المعلم'; 
     const todayString = new Date().toDateString(); 
+    let count = 0; 
+    const studentsToMarkIds: string[] = []; 
     
-    let idsToMark = specificIds;
-
-    if (!idsToMark) {
-        idsToMark = [];
-        students.forEach(student => { 
-            if (student.teacherId !== teacherId) return; 
-            const hasLogToday = student.logs.some(log => new Date(log.date).toDateString() === todayString); 
-            if (!hasLogToday) { 
-                idsToMark!.push(student.id); 
-            } 
-        });
-    }
+    // Check logs properly
+    students.forEach(student => { 
+        if (student.teacherId !== teacherId) return; 
+        const hasLogToday = student.logs.some(log => new Date(log.date).toDateString() === todayString); 
+        if (!hasLogToday) { 
+            studentsToMarkIds.push(student.id); 
+        } 
+    }); 
     
-    if (idsToMark.length === 0) { 
+    if (studentsToMarkIds.length === 0) { 
         showNotification("تم تسجيل جميع الطلاب لهذا اليوم بالفعل.", 'success'); 
         return; 
     } 
     
-    if (!specificIds && !window.confirm(`سيتم تسجيل الغياب لـ ${idsToMark.length} طالب لم يسجلوا اليوم. هل أنت متأكد؟`)) { 
+    if (!window.confirm(`سيتم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب لم يسجلوا اليوم. هل أنت متأكد؟`)) { 
         return; 
     } 
     
-    // تحديث كل طالب في فايربيز
-    let successCount = 0;
-    for (const studentId of idsToMark) {
-        const student = students.find(s => s.id === studentId);
-        if (student) {
-            const absentLog: DailyLog = { 
-                id: 'absent_' + Date.now() + Math.random(), 
-                date: new Date().toISOString(), 
-                teacherId, 
-                teacherName, 
-                seenByParent: false, 
-                isAbsent: true, 
-                notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.' 
-            };
-            const updatedStudent = { ...student, logs: [absentLog, ...student.logs] };
-            try {
-                await setDoc(doc(db, "students", student.id), updatedStudent);
-                successCount++;
-            } catch(e) { console.error(e); }
-        }
-    }
-
-    if (successCount > 0) showNotification(`تم تسجيل الغياب لـ ${successCount} طالب بنجاح`, 'success'); 
+    setStudents(prevStudents => { 
+        return prevStudents.map(student => { 
+            if (studentsToMarkIds.includes(student.id)) { 
+                count++; 
+                const absentLog: DailyLog = { 
+                    id: 'absent_' + Date.now() + Math.random(), 
+                    date: new Date().toISOString(), 
+                    teacherId, 
+                    teacherName, 
+                    seenByParent: false, 
+                    isAbsent: true, 
+                    notes: 'تم تسجيل الغياب تلقائياً لعدم الحضور.' 
+                }; 
+                return { ...student, logs: [absentLog, ...student.logs] }; 
+            } 
+            return student; 
+        }); 
+    }); 
+    showNotification(`تم تسجيل الغياب لـ ${studentsToMarkIds.length} طالب بنجاح`, 'success'); 
   };
 
-  const addStudent = async (name: string, code: string) => { 
-      const newStudent: Student = { 
-          id: 's_' + Date.now() + Math.random(), 
-          teacherId: appState.currentUser.id || 't1', 
-          name: name, 
-          parentCode: code, 
-          weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, events: [] })), 
-          payments: [], 
-          logs: [] 
-      }; 
-      try {
-          await setDoc(doc(db, "students", newStudent.id), newStudent);
-          return newStudent; 
-      } catch (error) {
-          showNotification('تم إضافة الطالب محلياً', 'success');
-          // لا نرمي الخطأ حتى لا يظن المستخدم أن العملية فشلت
-          return newStudent;
-      }
-  };
+  const addStudent = (name: string, code: string) => { const newStudent: Student = { id: 's_' + Date.now() + Math.random(), teacherId: appState.currentUser.id || 't1', name: name, parentCode: code, weeklySchedule: DAYS_OF_WEEK.map(d => ({ day: d, events: [] })), payments: [], logs: [] }; setStudents([newStudent, ...students]); return newStudent; };
+  const addTeacher = (name: string, loginCode: string) => { const newTeacher: Teacher = { id: 't_' + Date.now(), name, loginCode }; setTeachers(prev => [...prev, newTeacher]); showNotification('تم إضافة المحفظ بنجاح'); };
+  const updateTeacher = (id: string, name: string, loginCode: string) => { setTeachers(prev => prev.map(t => t.id === id ? { ...t, name, loginCode } : t )); showNotification('تم تعديل بيانات المحفظ بنجاح'); };
+  const deleteTeacher = (id: string) => { setTeachers(prevTeachers => { const remaining = prevTeachers.filter(t => t.id !== id); return [...remaining]; }); showNotification('تم حذف المحفظ بنجاح'); };
+  const markLogsAsSeen = (studentId: string, logIds: string[]) => { const studentIndex = students.findIndex(s => s.id === studentId); if (studentIndex === -1) return; const student = students[studentIndex]; const studentLogs = student.logs.map(log => { if (logIds.includes(log.id)) { return { ...log, seenByParent: true, seenAt: new Date().toISOString() }; } return log; }); const updatedStudent = { ...student, logs: studentLogs }; updateStudent(updatedStudent); showNotification('تم تأكيد الاطلاع', 'success'); };
+  const addAnnouncement = (ann: Announcement) => { setAnnouncements(prev => [ann, ...prev]); };
+  const deleteAnnouncement = (id: string) => { setAnnouncements(prev => prev.filter(a => a.id !== id)); showNotification('تم حذف الإعلان'); };
 
-  const addTeacher = async (name: string, loginCode: string) => { 
-      const newTeacher: Teacher = { id: 't_' + Date.now(), name, loginCode }; 
-      try {
-          await setDoc(doc(db, "teachers", newTeacher.id), newTeacher);
-          showNotification('تم إضافة المحفظ بنجاح'); 
-      } catch (error: any) { 
-        console.error("Add Teacher Error:", error);
-        if (error.code === 'permission-denied') {
-          showNotification('خطأ: ليس لديك صلاحية الكتابة في قاعدة البيانات', 'error'); 
-        } else {
-          showNotification('تم الحفظ محلياً: ' + error.message, 'success'); 
-        }
-      }
-  };
-
-  const updateTeacher = async (id: string, name: string, loginCode: string) => { 
-      const teacher = teachers.find(t => t.id === id);
-      if (teacher) {
-          const updated = { ...teacher, name, loginCode };
-          try {
-            await setDoc(doc(db, "teachers", id), updated);
-            showNotification('تم تعديل بيانات المحفظ بنجاح');
-          } catch (e) {
-            showNotification('تم التعديل محلياً', 'success');
-          }
-      }
-  };
-
-  const deleteTeacher = async (id: string) => { 
-      if(!window.confirm("حذف المعلم سيحذف صلاحية دخوله، هل أنت متأكد؟")) return;
-      try {
-        await deleteDoc(doc(db, "teachers", id));
-        showNotification('تم حذف المحفظ بنجاح'); 
-      } catch (e) {
-        showNotification('فشل الحذف', 'error');
-      }
-  };
-
-  const markLogsAsSeen = async (studentId: string, logIds: string[]) => { 
-      const student = students.find(s => s.id === studentId); 
-      if (!student) return; 
-      
-      const studentLogs = student.logs.map(log => { 
-          if (logIds.includes(log.id)) { 
-              return { ...log, seenByParent: true, seenAt: new Date().toISOString() }; 
-          } 
-          return log; 
-      }); 
-      
-      const updatedStudent = { ...student, logs: studentLogs }; 
-      await updateStudent(updatedStudent); 
-      showNotification('تم تأكيد الاطلاع', 'success'); 
-  };
-
-  const addAnnouncement = async (ann: Announcement) => { 
-      try {
-        await setDoc(doc(db, "announcements", ann.id), ann);
-      } catch(e) { showNotification('فشل نشر الإعلان', 'error'); }
-  };
-
-  const deleteAnnouncement = async (id: string) => { 
-      if(!window.confirm("حذف الإعلان؟")) return;
-      await deleteDoc(doc(db, "announcements", id));
-      showNotification('تم حذف الإعلان'); 
-  };
-
-  const handlePublishAdab = async (title: string, quizzes: QuizItem[]) => {
+  const handlePublishAdab = (title: string, quizzes: QuizItem[]) => {
       const teacherId = appState.currentUser.id;
       const teacherName = appState.currentUser.name || 'المعلم';
       if (!teacherId) return;
 
       const todayIso = new Date().toISOString();
       const todayDateStr = new Date().toDateString();
+      const newSessionId = 'adab_sess_' + Date.now();
 
       // 1. Create General Announcement
       const newAnnouncement: Announcement = {
@@ -514,48 +297,113 @@ const App: React.FC = () => {
           date: todayIso,
           type: 'GENERAL'
       };
-      await addAnnouncement(newAnnouncement);
+      addAnnouncement(newAnnouncement);
       
-      // 2. Update Students Logs in Firebase
-      // هذا قد يأخذ وقتاً إذا كان عدد الطلاب كبيراً، لذا يفضل استخدام Batch Write في المشاريع الكبيرة
-      // لكن هنا سنستخدم Loop بسيط
-      const teacherStudents = students.filter(s => s.teacherId === teacherId);
-      
-      for (const s of teacherStudents) {
-          const existingLogIndex = s.logs.findIndex(l => new Date(l.date).toDateString() === todayDateStr);
-          let updatedLogs = [...s.logs];
-          
-          const adabSessionData = { title: title, quizzes: quizzes };
+      // 2. New: Add to Archive
+      const newAdabSession: AdabSession = {
+          id: newSessionId,
+          title,
+          quizzes,
+          date: todayIso
+      };
+      setAdabArchive(prev => [newAdabSession, ...prev]);
 
-          if (existingLogIndex >= 0) {
-              updatedLogs[existingLogIndex] = {
-                  ...updatedLogs[existingLogIndex],
-                  isAdab: true,
-                  adabSession: adabSessionData,
+      // 3. Update Students Logs
+      setStudents(prevStudents => prevStudents.map(s => {
+          if (s.teacherId === teacherId) {
+              const existingLogIndex = s.logs.findIndex(l => new Date(l.date).toDateString() === todayDateStr);
+              
+              // New Adab Session Data with ID
+              const adabSessionData: AdabSession = {
+                  id: newSessionId,
+                  title: title,
+                  quizzes: quizzes,
+                  date: todayIso
               };
-          } else {
-              const newLog: DailyLog = {
-                  id: 'adab_' + Date.now() + Math.random(),
-                  date: todayIso,
-                  teacherId,
-                  teacherName,
-                  isAbsent: false,
-                  isAdab: true,
-                  adabSession: adabSessionData,
-                  seenByParent: false,
-                  notes: ""
-              };
-              updatedLogs = [newLog, ...updatedLogs];
+
+              // If log exists for today, UPDATE it to include Adab
+              if (existingLogIndex >= 0) {
+                  const updatedLogs = [...s.logs];
+                  updatedLogs[existingLogIndex] = {
+                      ...updatedLogs[existingLogIndex],
+                      isAdab: true,
+                      adabSession: adabSessionData,
+                  };
+                  return { ...s, logs: updatedLogs };
+              } else {
+                  // Create NEW log
+                  const newLog: DailyLog = {
+                      id: 'adab_' + Date.now() + Math.random(),
+                      date: todayIso,
+                      teacherId,
+                      teacherName,
+                      isAbsent: false,
+                      isAdab: true,
+                      adabSession: adabSessionData,
+                      seenByParent: false,
+                      notes: ""
+                  };
+                  return { ...s, logs: [newLog, ...s.logs] };
+              }
           }
-          
-          // تحديث الطالب في القاعدة
-          await setDoc(doc(db, "students", s.id), { ...s, logs: updatedLogs });
-      }
-
-      showNotification('تم نشر درس الآداب وتحديث سجلات الطلاب', 'success');
+          return s;
+      }));
   };
 
-  const handleQuickAnnouncement = async (type: 'ADAB' | 'HOLIDAY', payload?: any) => {
+  const handleEditAdab = (sessionId: string, title: string, quizzes: QuizItem[]) => {
+      // 1. Update Archive
+      setAdabArchive(prev => prev.map(s => s.id === sessionId ? { ...s, title, quizzes } : s));
+
+      // 2. Update Student Logs and Reset Parent Interaction
+      setStudents(prevStudents => prevStudents.map(student => {
+          const hasThisAdab = student.logs.some(l => l.adabSession?.id === sessionId);
+          if (hasThisAdab) {
+              const newLogs = student.logs.map(log => {
+                  if (log.adabSession?.id === sessionId) {
+                      return {
+                          ...log,
+                          adabSession: { ...log.adabSession, title, quizzes },
+                          // RESET PARENT INTERACTION
+                          seenByParent: false,
+                          parentQuizScore: undefined,
+                          parentQuizMax: undefined
+                      };
+                  }
+                  return log;
+              });
+              return { ...student, logs: newLogs };
+          }
+          return student;
+      }));
+  };
+
+  const handleDeleteAdab = (sessionId: string) => {
+      // 1. Remove from Archive
+      setAdabArchive(prev => prev.filter(s => s.id !== sessionId));
+
+      // 2. Remove from Student Logs
+      setStudents(prevStudents => prevStudents.map(student => {
+          // Filter out logs that are ONLY Adab for this session, or remove Adab property if mixed
+          const newLogs = student.logs.map(log => {
+              if (log.adabSession?.id === sessionId) {
+                  if (log.isAbsent === false && !log.jadeed && !log.attendance) {
+                      // Pure Adab log -> Remove it entirely (mark for filtering)
+                      return null;
+                  } else {
+                      // Mixed log -> Remove Adab properties
+                      const { adabSession, parentQuizScore, parentQuizMax, ...rest } = log;
+                      return { ...rest, isAdab: false };
+                  }
+              }
+              return log;
+          }).filter(l => l !== null) as DailyLog[];
+          
+          return { ...student, logs: newLogs };
+      }));
+      showNotification('تم حذف درس الآداب بنجاح', 'success');
+  };
+
+  const handleQuickAnnouncement = (type: 'ADAB' | 'HOLIDAY', payload?: any) => {
       const teacherId = appState.currentUser.id;
       const teacherName = appState.currentUser.name || 'المعلم';
       if (!teacherId) return;
@@ -576,8 +424,11 @@ const App: React.FC = () => {
           type: 'GENERAL'
       };
       
-      await addAnnouncement(newAnnouncement);
-      if (type !== 'ADAB') {
+      addAnnouncement(newAnnouncement);
+      
+      if (type === 'ADAB') {
+          // Legacy support if needed, but onPublishAdab handles the new quiz flow
+      } else {
           showNotification('تم إرسال تنبيه الإجازة', 'success');
       }
   };
@@ -616,6 +467,13 @@ const App: React.FC = () => {
                 teacherId={appState.currentUser.id || 't1'}
                 students={students.filter(s => s.teacherId === appState.currentUser.id)}
                 announcements={announcements}
+                adabArchive={adabArchive.filter(s => {
+                    // Filter archive based on logs: Only show adab sessions that appear in this teacher's students logs
+                    // OR just show all if we assume one teacher per device context mostly.
+                    // Better: Filter if the session was created by this teacher logic (but we don't store creatorId in AdabSession yet)
+                    // For now, simple return all is fine or check date.
+                    return true;
+                })}
                 onUpdateStudent={updateStudent}
                 onAddStudent={addStudent}
                 onDeleteStudents={deleteStudents}
@@ -625,6 +483,8 @@ const App: React.FC = () => {
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
                 onPublishAdab={handlePublishAdab}
+                onEditAdab={handleEditAdab}
+                onDeleteAdab={handleDeleteAdab}
                 onQuickAnnouncement={handleQuickAnnouncement}
             />
         ) : appState.currentUser.role === 'PARENT' ? (

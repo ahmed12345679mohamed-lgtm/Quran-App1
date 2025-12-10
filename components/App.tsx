@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem } from '../types';
+import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem, AdabSession } from '../types';
 import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from '../constants';
 import { TeacherDashboard } from './TeacherDashboard';
 import { ParentDashboard } from './ParentDashboard';
@@ -58,6 +58,12 @@ const App: React.FC = () => {
       return saved ? JSON.parse(saved) : [];
   });
 
+  // New Adab Archive State
+  const [adabArchive, setAdabArchive] = useState<AdabSession[]>(() => {
+      const saved = localStorage.getItem('muhaffiz_adab_archive');
+      return saved ? JSON.parse(saved) : [];
+  });
+
   const [organizationName, setOrganizationName] = useState(() => {
       return localStorage.getItem('muhaffiz_org_name') || "دار التوحيد";
   });
@@ -111,8 +117,9 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('muhaffiz_students_v100', JSON.stringify(students)); }, [students]);
   useEffect(() => { localStorage.setItem('muhaffiz_teachers_v100', JSON.stringify(teachers)); }, [teachers]);
   useEffect(() => { localStorage.setItem('muhaffiz_announcements_v100', JSON.stringify(announcements)); }, [announcements]);
+  useEffect(() => { localStorage.setItem('muhaffiz_adab_archive', JSON.stringify(adabArchive)); }, [adabArchive]);
 
-  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, currentUser: { role: 'GUEST' } });
+  const [appState, setAppState] = useState<AppState>({ students: students, teachers: teachers, announcements: announcements, adabArchive: adabArchive, currentUser: { role: 'GUEST' } });
 
   // --- LOGIN & NAVIGATION STATE ---
   const [loginView, setLoginView] = useState<'SELECTION' | 'PARENT' | 'TEACHER' | 'ADMIN'>('SELECTION');
@@ -277,6 +284,7 @@ const App: React.FC = () => {
 
       const todayIso = new Date().toISOString();
       const todayDateStr = new Date().toDateString();
+      const newSessionId = 'adab_sess_' + Date.now();
 
       // 1. Create General Announcement
       const newAnnouncement: Announcement = {
@@ -289,15 +297,26 @@ const App: React.FC = () => {
       };
       addAnnouncement(newAnnouncement);
       
-      // 2. Update Students Logs
+      // 2. New: Add to Archive
+      const newAdabSession: AdabSession = {
+          id: newSessionId,
+          title,
+          quizzes,
+          date: todayIso
+      };
+      setAdabArchive(prev => [newAdabSession, ...prev]);
+
+      // 3. Update Students Logs
       setStudents(prevStudents => prevStudents.map(s => {
           if (s.teacherId === teacherId) {
               const existingLogIndex = s.logs.findIndex(l => new Date(l.date).toDateString() === todayDateStr);
               
-              // New Adab Session Data
-              const adabSessionData = {
+              // New Adab Session Data with ID
+              const adabSessionData: AdabSession = {
+                  id: newSessionId,
                   title: title,
-                  quizzes: quizzes 
+                  quizzes: quizzes,
+                  date: todayIso
               };
 
               // If log exists for today, UPDATE it to include Adab
@@ -305,11 +324,8 @@ const App: React.FC = () => {
                   const updatedLogs = [...s.logs];
                   updatedLogs[existingLogIndex] = {
                       ...updatedLogs[existingLogIndex],
-                      isAdab: true, // Mark as Adab day even if attendance was present
+                      isAdab: true, 
                       adabSession: adabSessionData,
-                      // We do NOT reset seenByParent to false if it was true, to avoid annoyance, 
-                      // BUT for Adab we want them to see the quiz. 
-                      // Let's rely on the "Active Quiz" card in ParentDashboard appearing if parentQuizScore is undefined.
                   };
                   return { ...s, logs: updatedLogs };
               } else {
@@ -330,7 +346,59 @@ const App: React.FC = () => {
           }
           return s;
       }));
-      showNotification('تم نشر درس الآداب وتحديث سجلات الطلاب', 'success');
+  };
+
+  const handleEditAdab = (sessionId: string, title: string, quizzes: QuizItem[]) => {
+      // 1. Update Archive
+      setAdabArchive(prev => prev.map(s => s.id === sessionId ? { ...s, title, quizzes } : s));
+
+      // 2. Update Student Logs and Reset Parent Interaction
+      setStudents(prevStudents => prevStudents.map(student => {
+          const hasThisAdab = student.logs.some(l => l.adabSession?.id === sessionId);
+          if (hasThisAdab) {
+              const newLogs = student.logs.map(log => {
+                  if (log.adabSession?.id === sessionId) {
+                      return {
+                          ...log,
+                          adabSession: { ...log.adabSession!, title, quizzes },
+                          // RESET PARENT INTERACTION
+                          seenByParent: false,
+                          parentQuizScore: undefined,
+                          parentQuizMax: undefined
+                      };
+                  }
+                  return log;
+              });
+              return { ...student, logs: newLogs };
+          }
+          return student;
+      }));
+  };
+
+  const handleDeleteAdab = (sessionId: string) => {
+      // 1. Remove from Archive
+      setAdabArchive(prev => prev.filter(s => s.id !== sessionId));
+
+      // 2. Remove from Student Logs
+      setStudents(prevStudents => prevStudents.map(student => {
+          // Filter out logs that are ONLY Adab for this session, or remove Adab property if mixed
+          const newLogs = student.logs.map(log => {
+              if (log.adabSession?.id === sessionId) {
+                  if (log.isAbsent === false && !log.jadeed && !log.attendance) {
+                      // Pure Adab log -> Remove it entirely (mark for filtering)
+                      return null;
+                  } else {
+                      // Mixed log -> Remove Adab properties
+                      const { adabSession, parentQuizScore, parentQuizMax, ...rest } = log;
+                      return { ...rest, isAdab: false };
+                  }
+              }
+              return log;
+          }).filter(l => l !== null) as DailyLog[];
+          
+          return { ...student, logs: newLogs };
+      }));
+      showNotification('تم حذف درس الآداب بنجاح', 'success');
   };
 
   const handleQuickAnnouncement = (type: 'ADAB' | 'HOLIDAY', payload?: any) => {
@@ -396,7 +464,12 @@ const App: React.FC = () => {
                 teacherName={appState.currentUser.name || 'المعلم'}
                 teacherId={appState.currentUser.id || 't1'}
                 students={students.filter(s => s.teacherId === appState.currentUser.id)}
+                allTeachers={teachers} 
                 announcements={announcements}
+                adabArchive={adabArchive.filter(s => {
+                    // Filter archive based on logs or show all
+                    return true;
+                })}
                 onUpdateStudent={updateStudent}
                 onAddStudent={addStudent}
                 onDeleteStudents={deleteStudents}
@@ -406,6 +479,8 @@ const App: React.FC = () => {
                 onLogout={handleLogout}
                 onShowNotification={showNotification}
                 onPublishAdab={handlePublishAdab}
+                onEditAdab={handleEditAdab}
+                onDeleteAdab={handleDeleteAdab}
                 onQuickAnnouncement={handleQuickAnnouncement}
             />
         ) : appState.currentUser.role === 'PARENT' ? (
@@ -461,9 +536,14 @@ const App: React.FC = () => {
                         {/* LOGIN FORMS */}
                         <div className="space-y-8">
                         {loginView === 'PARENT' && (
-                            <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative">
-                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-emerald-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
-                                <h3 className="text-center font-bold text-emerald-800 text-lg mb-4">تسجيل دخول ولي الأمر</h3>
+                            <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative pt-2">
+                                <div className="flex items-center mb-6 border-b border-emerald-50 pb-4">
+                                    <button type="button" onClick={() => setLoginView('SELECTION')} className="bg-gray-100 hover:bg-gray-200 text-gray-700 w-10 h-10 rounded-full flex items-center justify-center transition shadow-sm">
+                                        <span className="text-xl font-bold">➜</span>
+                                    </button>
+                                    <h3 className="flex-1 text-center font-bold text-emerald-800 text-xl">تسجيل دخول ولي الأمر</h3>
+                                    <div className="w-10"></div> {/* Spacer for centering */}
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-600 mb-1">اختر اسم المعلم (الشيخ)</label>
                                     <select 
@@ -493,9 +573,14 @@ const App: React.FC = () => {
                         )}
 
                         {loginView === 'TEACHER' && (
-                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative">
-                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-blue-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
-                                <h3 className="text-center font-bold text-blue-800 text-lg mb-4">تسجيل دخول المعلم</h3>
+                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative pt-2">
+                                <div className="flex items-center mb-6 border-b border-blue-50 pb-4">
+                                    <button type="button" onClick={() => setLoginView('SELECTION')} className="bg-gray-100 hover:bg-gray-200 text-gray-700 w-10 h-10 rounded-full flex items-center justify-center transition shadow-sm">
+                                        <span className="text-xl font-bold">➜</span>
+                                    </button>
+                                    <h3 className="flex-1 text-center font-bold text-blue-800 text-xl">تسجيل دخول المعلم</h3>
+                                    <div className="w-10"></div> {/* Spacer for centering */}
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-600 mb-1 text-center">اختر اسم المعلم</label>
                                     <select 
@@ -553,7 +638,7 @@ const App: React.FC = () => {
                                 <input 
                                     type="tel"
                                     placeholder="01xxxxxxxxx"
-                                    className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    className="w-full p-5 border-2 border-gray-200 rounded-2xl text-center text-4xl font-black tracking-[0.2em] text-emerald-800 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 outline-none transition shadow-sm placeholder:text-gray-300 h-20"
                                     value={parentPhoneInput}
                                     onChange={(e) => setParentPhoneInput(e.target.value)}
                                 />

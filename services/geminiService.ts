@@ -57,8 +57,17 @@ export const generateEncouragement = async (studentName: string, log: DailyLog):
 
   // 2. تحديد التقدير واختيار نص الرسالة
   let grade = log.jadeed?.grade;
+  
+  // If no main grade (e.g. MULTI with undefined top-level), try to find an average or first grade from multiSurahs
+  if (!grade && log.jadeed?.type === 'MULTI' && log.jadeed.multiSurahs && log.jadeed.multiSurahs.length > 0) {
+      grade = log.jadeed.multiSurahs[0].grade;
+  }
+
   if ((!grade || grade === undefined) && log.murajaah && log.murajaah.length > 0) {
       grade = log.murajaah[0].grade;
+      if (!grade && log.murajaah[0].type === 'MULTI' && log.murajaah[0].multiSurahs) {
+          grade = log.murajaah[0].multiSurahs[0]?.grade;
+      }
   }
 
   let bodyTemplate = "";

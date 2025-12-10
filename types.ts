@@ -1,4 +1,5 @@
 
+
 export enum Grade {
   EXCELLENT = 'ممتاز',
   VERY_GOOD = 'جيد جداً',
@@ -9,6 +10,11 @@ export enum Grade {
 
 export type AssignmentType = 'SURAH' | 'JUZ' | 'RANGE' | 'MULTI';
 
+export interface MultiSurahDetail {
+  name: string;
+  grade?: Grade;
+}
+
 export interface QuranAssignment {
   type: AssignmentType;
   name: string;
@@ -16,8 +22,8 @@ export interface QuranAssignment {
   ayahFrom: number;
   ayahTo: number;
   juzNumber?: number;
-  multiSurahs?: string[]; // For MULTI type
-  grade: Grade;
+  multiSurahs?: MultiSurahDetail[]; // Changed to object array for individual grades
+  grade: Grade; // Overall grade or single assignment grade
 }
 
 // --- UPDATED ATTENDANCE STRUCTURE ---
@@ -36,8 +42,10 @@ export interface QuizItem {
 }
 
 export interface AdabSession {
+  id: string; // Added ID for tracking
   title: string; 
   quizzes: QuizItem[]; 
+  date: string; // Added date for archive sorting
 }
 
 export interface DailyLog {
@@ -106,6 +114,12 @@ export interface Teacher {
 
 export type AnnouncementType = 'EXAM' | 'COMPETITION' | 'GENERAL';
 
+export interface ExamDayDetail {
+    id: string;
+    date: string;
+    description: string; // What to recite (e.g. Jadeed, Review)
+}
+
 export interface Announcement {
   id: string;
   teacherId: string;
@@ -113,6 +127,12 @@ export interface Announcement {
   content: string;
   date: string;
   type: AnnouncementType;
+  // Specific for Exams
+  examDetails?: {
+      testerTeacherId: string;
+      testerTeacherName: string;
+      schedule: ExamDayDetail[];
+  };
 }
 
 export type UserRole = 'TEACHER' | 'PARENT' | 'ADMIN' | 'GUEST';
@@ -121,6 +141,7 @@ export interface AppState {
   students: Student[];
   teachers: Teacher[];
   announcements: Announcement[];
+  adabArchive: AdabSession[]; // New: Store published Adab lessons
   currentUser: {
     role: UserRole;
     id?: string; 
