@@ -28,15 +28,20 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// تفعيل التخزين المؤقت (هذا ما يجعل الحفظ حقيقياً بدون إنترنت)
+// تفعيل التخزين المؤقت (للحفظ بدون إنترنت)
 try {
   enableIndexedDbPersistence(db).catch((err) => {
-      // نتجاهل الأخطاء البسيطة (مثل فتح أكثر من تبويب)
-      console.log('Persistence:', err.code);
+      console.log('Persistence Info:', err.code);
   });
 } catch (e) {
   // التفعيل مسبقاً
 }
+
+// --- دالة مساعدة لتنظيف البيانات قبل الإرسال ---
+// هذه الدالة تحل مشكلة "Unexpected Error" الناتجة عن القيم غير المعرفة
+const cleanData = (data: any) => {
+    return JSON.parse(JSON.stringify(data));
+};
 
 const Logo = ({ title }: { title: string }) => (
   <div className="flex flex-col items-center mb-8">
@@ -49,7 +54,7 @@ const Logo = ({ title }: { title: string }) => (
 );
 
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
-  useEffect(() => { const timer = setTimeout(onClose, 3000); return () => clearTimeout(timer); }, [onClose]);
+  useEffect(() => { const timer = setTimeout(onClose, 4000); return () => clearTimeout(timer); }, [onClose]);
   return (
     <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 min-w-[300px] justify-center text-center ${type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
       <span className="text-2xl">{type === 'success' ? '✅' : '⚠️'}</span>
@@ -82,30 +87,28 @@ const App: React.FC = () => {
         setConnectionStatus('CONNECTED');
       } catch (error: any) {
         console.warn("Auth Error:", error.code);
-        // لا نظهر شاشة الخطأ الحمراء إلا في الحالات الحرجة جداً
-        // في حالة مشاكل النت، التطبيق سيعمل من الكاش
         if (error.code !== 'auth/network-request-failed') {
              setConnectionStatus('ERROR');
              setDetailedError(error.message);
+        } else {
+            // في حالة انقطاع النت، نعتبره متصلاً (وضع الأوفلاين)
+            setConnectionStatus('CONNECTED');
         }
       }
     };
     signIn();
     onAuthStateChanged(auth, (user) => { if(user) setConnectionStatus('CONNECTED'); });
 
-    // مراقبة الحالة (للعلم فقط، لن تؤثر على عمليات الحفظ)
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // --- جلب البيانات (يعمل أوفلاين وأونلاين) ---
+  // --- جلب البيانات ---
   useEffect(() => {
-    // الاستماع للطلاب (من الكاش أو السيرفر)
     const qStudents = query(collection(db, "students"));
     const unsubStudents = onSnapshot(qStudents, { includeMetadataChanges: true }, (snapshot) => {
-      // هذا الكود يتنفذ فوراً عند أي تعديل محلي، لذا "يظهر الحفظ أمامك"
       setStudents(snapshot.docs.map(doc => doc.data() as Student));
     });
 
@@ -124,7 +127,6 @@ const App: React.FC = () => {
 
   useEffect(() => { localStorage.setItem('muhaffiz_org_name', organizationName); document.title = `${organizationName}`; }, [organizationName]);
 
-  // PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
   useEffect(() => {
@@ -153,33 +155,37 @@ const App: React.FC = () => {
 
   const handleTeacherLogin = (e: React.FormEvent) => { e.preventDefault(); const t = teachers.find(x => x.id === selectedTeacherId); if(t && t.loginCode === normalizeArabicNumbers(teacherCodeInput)) { setAppState(prev => ({...prev, currentUser: { role: 'TEACHER', id: t.id, name: t.name }})); setLoginError(''); } else { setLoginError('بيانات الدخول خطأ'); } };
   const handleParentLogin = (e: React.FormEvent) => { e.preventDefault(); const cleanCode = normalizeArabicNumbers(parentCodeInput.trim()); const s = students.find(st => st.parentCode === cleanCode && st.teacherId === parentSelectedTeacher); if(s) { if(s.parentPhone) { setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setLoginError(''); } else { setPendingStudentId(s.id); setShowPhoneSetup(true); setLoginError(''); } } else { setLoginError('بيانات خطأ'); } };
-  const handleCompleteParentProfile = async (e: React.FormEvent) => { e.preventDefault(); const phone = normalizeArabicNumbers(parentPhoneInput); if(pendingStudentId && phone.length >= 10) { const s = students.find(x => x.id === pendingStudentId); if(s) { await setDoc(doc(db, "students", s.id), { ...s, parentPhone: phone }); setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setShowPhoneSetup(false); } } else { setLoginError('رقم هاتف غير صحيح'); } };
+  const handleCompleteParentProfile = async (e: React.FormEvent) => { e.preventDefault(); const phone = normalizeArabicNumbers(parentPhoneInput); if(pendingStudentId && phone.length >= 10) { const s = students.find(x => x.id === pendingStudentId); if(s) { await setDoc(doc(db, "students", s.id), cleanData({ ...s, parentPhone: phone })); setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setShowPhoneSetup(false); } } else { setLoginError('رقم هاتف غير صحيح'); } };
   const handleAdminLogin = (e: React.FormEvent) => { e.preventDefault(); if(adminPassword === (localStorage.getItem('admin_password') || '456888')) { setAppState(prev => ({...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }})); setLoginError(''); } else { setLoginError('كلمة المرور خطأ'); } };
   const handleLogout = () => { setAppState(prev => ({...prev, currentUser: { role: 'GUEST' }})); setLoginView('SELECTION'); setLoginError(''); setParentCodeInput(''); setTeacherCodeInput(''); setAdminPassword(''); setShowPhoneSetup(false); };
 
-  // --- عمليات الحفظ (موحدة) ---
+  // --- CRUD (مع معالجة الأخطاء وتنظيف البيانات) ---
   
   const updateStudent = async (s: Student) => { 
       try { 
-          // هذا الأمر يحفظ في الكاش فوراً إذا لم يوجد نت، ثم يرفع لاحقاً
-          // واجهة المستخدم ستتحدث فوراً بفضل onSnapshot
-          await setDoc(doc(db, "students", s.id), s);
+          // نستخدم cleanData لإزالة أي حقول undefined قد تسبب المشكلة
+          await setDoc(doc(db, "students", s.id), cleanData(s));
           showNotification('تم الحفظ بنجاح ✅', 'success');
-      } catch(e) { 
-          // هذا لن يحدث بسبب انقطاع النت (لأن الكاش مفعل)، بل لأخطاء حقيقية فقط
-          console.error(e);
-          showNotification('حدث خطأ غير متوقع', 'error'); 
+      } catch(e: any) { 
+          console.error("Save Error:", e);
+          let errorMsg = 'حدث خطأ غير متوقع';
+          if (e.code === 'permission-denied') errorMsg = 'خطأ صلاحيات: راجع Rules في فايربيز';
+          else if (e.code === 'invalid-argument') errorMsg = 'بيانات غير صالحة (حقل فارغ)';
+          else if (e.message) errorMsg = `خطأ: ${e.message}`;
+          
+          showNotification(errorMsg, 'error'); 
       } 
   };
 
   const addStudent = async (name: string, code: string) => { 
       const s: Student = { id: 's_'+Date.now(), teacherId: appState.currentUser.id!, name, parentCode: code, logs: [], payments: [], weeklySchedule: DAYS_OF_WEEK.map(d => ({day: d, events: []})) }; 
       try { 
-          await setDoc(doc(db, "students", s.id), s); 
+          await setDoc(doc(db, "students", s.id), cleanData(s)); 
           showNotification('تمت إضافة الطالب بنجاح ✅', 'success');
           return s; 
-      } catch(e) { 
-          showNotification('خطأ في الإضافة', 'error'); 
+      } catch(e: any) { 
+          console.error("Add Error:", e);
+          showNotification('خطأ في الإضافة: ' + e.message, 'error'); 
           return s; 
       } 
   };
@@ -193,23 +199,23 @@ const App: React.FC = () => {
           if(s) {
               const isExcused = excusedIds.includes(id);
               const log: DailyLog = { id: 'abs_'+Date.now(), date: new Date().toISOString(), teacherId, teacherName, seenByParent: false, isAbsent: true, notes: isExcused ? 'عذر مقبول' : 'غياب بدون عذر' };
-              await setDoc(doc(db, "students", s.id), { ...s, logs: [log, ...s.logs] });
+              await setDoc(doc(db, "students", s.id), cleanData({ ...s, logs: [log, ...s.logs] }));
           }
       });
       showNotification('تم تسجيل الغياب بنجاح ✅', 'success');
   };
 
-  const addTeacher = async (name: string, code: string) => { const t: Teacher = { id: 't_'+Date.now(), name, loginCode: code }; await setDoc(doc(db, "teachers", t.id), t); showNotification('تمت الإضافة'); };
-  const updateTeacher = async (id: string, name: string, code: string) => { await setDoc(doc(db, "teachers", id), { id, name, loginCode: code }); showNotification('تم التعديل'); };
+  const addTeacher = async (name: string, code: string) => { const t: Teacher = { id: 't_'+Date.now(), name, loginCode: code }; await setDoc(doc(db, "teachers", t.id), cleanData(t)); showNotification('تمت الإضافة'); };
+  const updateTeacher = async (id: string, name: string, code: string) => { await setDoc(doc(db, "teachers", id), cleanData({ id, name, loginCode: code })); showNotification('تم التعديل'); };
   const deleteTeacher = async (id: string) => { if(window.confirm('حذف؟')) deleteDoc(doc(db, "teachers", id)); };
-  const markSeen = async (sid: string, lids: string[]) => { const s = students.find(x => x.id === sid); if(s) { const logs = s.logs.map(l => lids.includes(l.id) ? { ...l, seenByParent: true, seenAt: new Date().toISOString() } : l); await setDoc(doc(db, "students", sid), { ...s, logs }); } };
-  const addAnnounce = async (a: Announcement) => { await setDoc(doc(db, "announcements", a.id), a); };
+  const markSeen = async (sid: string, lids: string[]) => { const s = students.find(x => x.id === sid); if(s) { const logs = s.logs.map(l => lids.includes(l.id) ? { ...l, seenByParent: true, seenAt: new Date().toISOString() } : l); await setDoc(doc(db, "students", sid), cleanData({ ...s, logs })); } };
+  const addAnnounce = async (a: Announcement) => { await setDoc(doc(db, "announcements", a.id), cleanData(a)); };
   const delAnnounce = async (id: string) => { if(window.confirm('حذف؟')) deleteDoc(doc(db, "announcements", id)); };
   
   const publishAdab = async (title: string, quizzes: QuizItem[]) => {
       const teacherId = appState.currentUser.id!; const teacherName = appState.currentUser.name!;
       const ann: Announcement = { id: 'ann_'+Date.now(), teacherId, teacherName, content: `***${title}\nيرجى المشاركة في حل الأسئلة!`, date: new Date().toISOString(), type: 'GENERAL' };
-      await setDoc(doc(db, "announcements", ann.id), ann);
+      await setDoc(doc(db, "announcements", ann.id), cleanData(ann));
       const myStudents = students.filter(s => s.teacherId === teacherId);
       const today = new Date().toDateString();
       myStudents.forEach(async s => {
@@ -218,7 +224,7 @@ const App: React.FC = () => {
           const sessionData = { id: 'sess_'+Date.now(), title, quizzes, date: new Date().toISOString() };
           if(hasLog >= 0) { newLogs[hasLog] = { ...newLogs[hasLog], isAdab: true, adabSession: sessionData }; }
           else { newLogs = [{ id: 'adab_'+Date.now(), date: new Date().toISOString(), teacherId, teacherName, isAbsent: false, isAdab: true, adabSession: sessionData, seenByParent: false }, ...newLogs]; }
-          await setDoc(doc(db, "students", s.id), { ...s, logs: newLogs });
+          await setDoc(doc(db, "students", s.id), cleanData({ ...s, logs: newLogs }));
       });
       showNotification('تم النشر بنجاح ✅', 'success');
   };
