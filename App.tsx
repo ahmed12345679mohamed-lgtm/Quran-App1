@@ -6,7 +6,7 @@ import { ParentDashboard } from './components/ParentDashboard';
 import { AdminDashboard } from './components/AdminDashboard';
 import { Button } from './components/Button';
 
-// استيراد الإعدادات من الملف الخارجي لضمان عدم التكرار
+// استيراد الإعدادات من الملف الخارجي
 import { firebaseConfig } from './firebaseConfig';
 
 import { initializeApp } from 'firebase/app';
@@ -28,17 +28,14 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// تفعيل التخزين المؤقت (للعمل بدون إنترنت)
+// تفعيل التخزين المؤقت (هذا ما يجعل الحفظ حقيقياً بدون إنترنت)
 try {
   enableIndexedDbPersistence(db).catch((err) => {
-      if (err.code === 'failed-precondition') {
-          console.warn('الخاصية تعمل في تبويب واحد فقط');
-      } else if (err.code === 'unimplemented') {
-          console.warn('المتصفح لا يدعم التخزين المحلي');
-      }
+      // نتجاهل الأخطاء البسيطة (مثل فتح أكثر من تبويب)
+      console.log('Persistence:', err.code);
   });
 } catch (e) {
-  console.log("Persistence already enabled");
+  // التفعيل مسبقاً
 }
 
 const Logo = ({ title }: { title: string }) => (
@@ -52,7 +49,7 @@ const Logo = ({ title }: { title: string }) => (
 );
 
 const NotificationToast = ({ message, type, onClose }: { message: string, type: 'success' | 'error', onClose: () => void }) => {
-  useEffect(() => { const timer = setTimeout(onClose, 5000); return () => clearTimeout(timer); }, [onClose]);
+  useEffect(() => { const timer = setTimeout(onClose, 3000); return () => clearTimeout(timer); }, [onClose]);
   return (
     <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-4 rounded-xl shadow-2xl z-[100] flex items-center gap-3 min-w-[300px] justify-center text-center ${type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
       <span className="text-2xl">{type === 'success' ? '✅' : '⚠️'}</span>
@@ -64,80 +61,59 @@ const NotificationToast = ({ message, type, onClose }: { message: string, type: 
 const normalizeArabicNumbers = (str: string) => str.replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]);
 
 const App: React.FC = () => {
-  // الحالة الافتراضية
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [adabArchive, setAdabArchive] = useState<AdabSession[]>([]);
-  
   const [organizationName, setOrganizationName] = useState(() => localStorage.getItem('muhaffiz_org_name') || "دار التوحيد");
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
-  // متغيرات لتشخيص الأخطاء - ستظهر لك السبب الحقيقي
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTING' | 'CONNECTED' | 'ERROR'>('CONNECTING');
   const [detailedError, setDetailedError] = useState('');
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => setNotification({ message, type });
 
-  // --- 1. مرحلة الاتصال ---
+  // --- الاتصال ---
   useEffect(() => {
     const signIn = async () => {
       try {
         await signInAnonymously(auth);
         setConnectionStatus('CONNECTED');
       } catch (error: any) {
-        console.error("Firebase Connection Error:", error);
-        setConnectionStatus('ERROR');
-        // تفصيل نوع الخطأ لعرضه للمستخدم
-        if (error.code === 'auth/operation-not-allowed') {
-          setDetailedError("❌ سبب الخطأ: لم يتم تفعيل الدخول المجهول (Anonymous) في موقع فايربيز.");
-        } else if (error.code === 'auth/network-request-failed') {
-          setDetailedError("❌ سبب الخطأ: مشكلة في الإنترنت، الجهاز غير قادر على الوصول لسيرفرات جوجل.");
-        } else if (error.code === 'auth/api-key-not-valid') {
-           setDetailedError("❌ سبب الخطأ: مفتاح API غير صحيح. تأكد من نسخ المفاتيح بدقة.");
-        } else {
-          setDetailedError(`❌ رمز الخطأ: ${error.code} - ${error.message}`);
+        console.warn("Auth Error:", error.code);
+        // لا نظهر شاشة الخطأ الحمراء إلا في الحالات الحرجة جداً
+        // في حالة مشاكل النت، التطبيق سيعمل من الكاش
+        if (error.code !== 'auth/network-request-failed') {
+             setConnectionStatus('ERROR');
+             setDetailedError(error.message);
         }
       }
     };
-    
-    // تشغيل الاتصال
     signIn();
+    onAuthStateChanged(auth, (user) => { if(user) setConnectionStatus('CONNECTED'); });
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setConnectionStatus('CONNECTED');
-        console.log("Logged in as:", user.uid);
-      }
-    });
-
-    const handleOnline = () => { setIsOnline(true); showNotification('تم استعادة الاتصال بالإنترنت', 'success'); };
-    const handleOffline = () => { setIsOnline(false); showNotification('انقطع الاتصال - وضع الأوفلاين', 'error'); };
+    // مراقبة الحالة (للعلم فقط، لن تؤثر على عمليات الحفظ)
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline); window.addEventListener('offline', handleOffline);
-
-    return () => { unsubscribeAuth(); window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
+    return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
-  // --- 2. جلب البيانات ---
+  // --- جلب البيانات (يعمل أوفلاين وأونلاين) ---
   useEffect(() => {
-    // جلب الطلاب
+    // الاستماع للطلاب (من الكاش أو السيرفر)
     const qStudents = query(collection(db, "students"));
     const unsubStudents = onSnapshot(qStudents, { includeMetadataChanges: true }, (snapshot) => {
+      // هذا الكود يتنفذ فوراً عند أي تعديل محلي، لذا "يظهر الحفظ أمامك"
       setStudents(snapshot.docs.map(doc => doc.data() as Student));
-    }, (error) => {
-        console.error("Firestore Error:", error);
-        if (error.code === 'permission-denied') {
-            setConnectionStatus('ERROR');
-            setDetailedError("❌ سبب الخطأ: قواعد الأمان (Rules) تمنع القراءة. يرجى تعديل Rules في فايربيز لتكون: allow read, write: if true;");
-        }
     });
 
     const qTeachers = query(collection(db, "teachers"));
-    const unsubTeachers = onSnapshot(qTeachers, (snapshot) => setTeachers(snapshot.docs.map(doc => doc.data() as Teacher)));
-
+    const unsubTeachers = onSnapshot(qTeachers, { includeMetadataChanges: true }, (snapshot) => setTeachers(snapshot.docs.map(doc => doc.data() as Teacher)));
+    
     const qAnnouncements = query(collection(db, "announcements"));
-    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
+    const unsubAnnouncements = onSnapshot(qAnnouncements, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Announcement);
       data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setAnnouncements(data);
@@ -148,7 +124,7 @@ const App: React.FC = () => {
 
   useEffect(() => { localStorage.setItem('muhaffiz_org_name', organizationName); document.title = `${organizationName}`; }, [organizationName]);
 
-  // PWA Install Logic
+  // PWA
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
   useEffect(() => {
@@ -160,11 +136,10 @@ const App: React.FC = () => {
   }, []);
   const handleInstallClick = async () => { if (deferredPrompt) { deferredPrompt.prompt(); const { outcome } = await deferredPrompt.userChoice; if (outcome === 'accepted') setDeferredPrompt(null); }};
 
-  // State Management
   const [appState, setAppState] = useState<AppState>({ students, teachers, announcements, adabArchive, currentUser: { role: 'GUEST' } });
   useEffect(() => setAppState(prev => ({ ...prev, students, teachers, announcements, adabArchive })), [students, teachers, announcements, adabArchive]);
 
-  // --- LOGIN LOGIC ---
+  // Login Logic
   const [loginView, setLoginView] = useState<'SELECTION' | 'PARENT' | 'TEACHER' | 'ADMIN'>('SELECTION');
   const [parentCodeInput, setParentCodeInput] = useState('');
   const [parentPhoneInput, setParentPhoneInput] = useState('');
@@ -176,15 +151,41 @@ const App: React.FC = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  const handleTeacherLogin = (e: React.FormEvent) => { e.preventDefault(); const t = teachers.find(x => x.id === selectedTeacherId); if(t && t.loginCode === normalizeArabicNumbers(teacherCodeInput)) { setAppState(prev => ({...prev, currentUser: { role: 'TEACHER', id: t.id, name: t.name }})); setLoginError(''); } else { setLoginError('بيانات الدخول غير صحيحة'); } };
-  const handleParentLogin = (e: React.FormEvent) => { e.preventDefault(); const cleanCode = normalizeArabicNumbers(parentCodeInput.trim()); const s = students.find(st => st.parentCode === cleanCode && st.teacherId === parentSelectedTeacher); if(s) { if(s.parentPhone) { setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setLoginError(''); } else { setPendingStudentId(s.id); setShowPhoneSetup(true); setLoginError(''); } } else { setLoginError('الكود غير صحيح أو الطالب غير مسجل عند هذا المعلم'); } };
-  const handleCompleteParentProfile = async (e: React.FormEvent) => { e.preventDefault(); const phone = normalizeArabicNumbers(parentPhoneInput); if(pendingStudentId && phone.length >= 10) { const s = students.find(x => x.id === pendingStudentId); if(s) { await setDoc(doc(db, "students", s.id), { ...s, parentPhone: phone }); setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setShowPhoneSetup(false); } } else { setLoginError('رقم الهاتف غير صحيح'); } };
+  const handleTeacherLogin = (e: React.FormEvent) => { e.preventDefault(); const t = teachers.find(x => x.id === selectedTeacherId); if(t && t.loginCode === normalizeArabicNumbers(teacherCodeInput)) { setAppState(prev => ({...prev, currentUser: { role: 'TEACHER', id: t.id, name: t.name }})); setLoginError(''); } else { setLoginError('بيانات الدخول خطأ'); } };
+  const handleParentLogin = (e: React.FormEvent) => { e.preventDefault(); const cleanCode = normalizeArabicNumbers(parentCodeInput.trim()); const s = students.find(st => st.parentCode === cleanCode && st.teacherId === parentSelectedTeacher); if(s) { if(s.parentPhone) { setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setLoginError(''); } else { setPendingStudentId(s.id); setShowPhoneSetup(true); setLoginError(''); } } else { setLoginError('بيانات خطأ'); } };
+  const handleCompleteParentProfile = async (e: React.FormEvent) => { e.preventDefault(); const phone = normalizeArabicNumbers(parentPhoneInput); if(pendingStudentId && phone.length >= 10) { const s = students.find(x => x.id === pendingStudentId); if(s) { await setDoc(doc(db, "students", s.id), { ...s, parentPhone: phone }); setAppState(prev => ({...prev, currentUser: { role: 'PARENT', id: s.id, name: s.name }})); setShowPhoneSetup(false); } } else { setLoginError('رقم هاتف غير صحيح'); } };
   const handleAdminLogin = (e: React.FormEvent) => { e.preventDefault(); if(adminPassword === (localStorage.getItem('admin_password') || '456888')) { setAppState(prev => ({...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }})); setLoginError(''); } else { setLoginError('كلمة المرور خطأ'); } };
   const handleLogout = () => { setAppState(prev => ({...prev, currentUser: { role: 'GUEST' }})); setLoginView('SELECTION'); setLoginError(''); setParentCodeInput(''); setTeacherCodeInput(''); setAdminPassword(''); setShowPhoneSetup(false); };
 
-  // --- CRUD FUNCTIONS ---
-  const updateStudent = async (s: Student) => { try { await setDoc(doc(db, "students", s.id), s); } catch(e) { showNotification('تم الحفظ محلياً وسيتم الرفع عند الاتصال', 'success'); } };
-  const deleteStudents = async (ids: string[]) => { if(window.confirm('هل أنت متأكد من الحذف؟')) ids.forEach(id => deleteDoc(doc(db, "students", id))); };
+  // --- عمليات الحفظ (موحدة) ---
+  
+  const updateStudent = async (s: Student) => { 
+      try { 
+          // هذا الأمر يحفظ في الكاش فوراً إذا لم يوجد نت، ثم يرفع لاحقاً
+          // واجهة المستخدم ستتحدث فوراً بفضل onSnapshot
+          await setDoc(doc(db, "students", s.id), s);
+          showNotification('تم الحفظ بنجاح ✅', 'success');
+      } catch(e) { 
+          // هذا لن يحدث بسبب انقطاع النت (لأن الكاش مفعل)، بل لأخطاء حقيقية فقط
+          console.error(e);
+          showNotification('حدث خطأ غير متوقع', 'error'); 
+      } 
+  };
+
+  const addStudent = async (name: string, code: string) => { 
+      const s: Student = { id: 's_'+Date.now(), teacherId: appState.currentUser.id!, name, parentCode: code, logs: [], payments: [], weeklySchedule: DAYS_OF_WEEK.map(d => ({day: d, events: []})) }; 
+      try { 
+          await setDoc(doc(db, "students", s.id), s); 
+          showNotification('تمت إضافة الطالب بنجاح ✅', 'success');
+          return s; 
+      } catch(e) { 
+          showNotification('خطأ في الإضافة', 'error'); 
+          return s; 
+      } 
+  };
+
+  const deleteStudents = async (ids: string[]) => { if(window.confirm('حذف؟')) ids.forEach(id => deleteDoc(doc(db, "students", id))); };
+  
   const markAbsences = async (absentIds: string[], excusedIds: string[]) => { 
       const teacherId = appState.currentUser.id || 'unknown'; const teacherName = appState.currentUser.name || 'المعلم';
       [...absentIds, ...excusedIds].forEach(async (id) => {
@@ -195,9 +196,9 @@ const App: React.FC = () => {
               await setDoc(doc(db, "students", s.id), { ...s, logs: [log, ...s.logs] });
           }
       });
-      showNotification('تم تسجيل الغياب', 'success');
+      showNotification('تم تسجيل الغياب بنجاح ✅', 'success');
   };
-  const addStudent = async (name: string, code: string) => { const s: Student = { id: 's_'+Date.now(), teacherId: appState.currentUser.id!, name, parentCode: code, logs: [], payments: [], weeklySchedule: DAYS_OF_WEEK.map(d => ({day: d, events: []})) }; try { await setDoc(doc(db, "students", s.id), s); return s; } catch(e) { showNotification('تمت الإضافة محلياً', 'success'); return s; } };
+
   const addTeacher = async (name: string, code: string) => { const t: Teacher = { id: 't_'+Date.now(), name, loginCode: code }; await setDoc(doc(db, "teachers", t.id), t); showNotification('تمت الإضافة'); };
   const updateTeacher = async (id: string, name: string, code: string) => { await setDoc(doc(db, "teachers", id), { id, name, loginCode: code }); showNotification('تم التعديل'); };
   const deleteTeacher = async (id: string) => { if(window.confirm('حذف؟')) deleteDoc(doc(db, "teachers", id)); };
@@ -219,41 +220,26 @@ const App: React.FC = () => {
           else { newLogs = [{ id: 'adab_'+Date.now(), date: new Date().toISOString(), teacherId, teacherName, isAbsent: false, isAdab: true, adabSession: sessionData, seenByParent: false }, ...newLogs]; }
           await setDoc(doc(db, "students", s.id), { ...s, logs: newLogs });
       });
-      showNotification('تم النشر بنجاح', 'success');
+      showNotification('تم النشر بنجاح ✅', 'success');
   };
 
   const handleEditAdab = () => {}; 
   const handleDeleteAdab = () => {};
   const handleQuickAnnouncement = () => {};
 
-  // --- إذا كان هناك خطأ في الاتصال، اعرض الشاشة الحمراء ---
   if (connectionStatus === 'ERROR') {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-red-50 p-6 text-center" dir="rtl">
-              <div className="text-6xl mb-4">⚠️</div>
-              <h1 className="text-2xl font-bold text-red-800 mb-4">توقف التطبيق: فشل الاتصال بقاعدة البيانات</h1>
-              <div className="bg-white p-4 rounded-lg border-2 border-red-200 shadow-md text-right max-w-lg">
-                  <p className="font-bold text-gray-700 mb-2">تفاصيل الخطأ التقني:</p>
-                  <code className="block bg-gray-100 p-2 rounded text-red-600 text-sm font-mono dir-ltr mb-4">
-                      {detailedError || "Unknown Error"}
-                  </code>
-                  <p className="text-sm text-gray-600 mb-2">
-                      💡 <b>الحل المقترح:</b>
-                  </p>
-                  <ul className="text-sm text-gray-600 list-disc list-inside space-y-1">
-                      <li>تأكد من تفعيل <b>Anonymous Auth</b> في موقع فايربيز (Authentication).</li>
-                      <li>تأكد من أن <b>Firestore Rules</b> تسمح بالكتابة (allow read, write: if true).</li>
-                      <li>تأكد من اتصالك بالإنترنت.</li>
-                  </ul>
-              </div>
-              <button onClick={() => window.location.reload()} className="mt-6 bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition">🔄 إعادة المحاولة</button>
+              <h1 className="text-xl font-bold text-red-800 mb-2">تعذر الاتصال بقاعدة البيانات</h1>
+              <p className="text-gray-600 mb-4 text-sm">{detailedError}</p>
+              <button onClick={() => window.location.reload()} className="bg-red-600 text-white px-6 py-2 rounded-lg">تحديث الصفحة</button>
           </div>
       );
   }
 
   return (
       <>
-        {!isOnline && <div className="bg-gray-800 text-white text-center text-xs p-1 fixed top-0 w-full z-[110]">📡 وضع عدم الاتصال (Offline)</div>}
+        {!isOnline && <div className="bg-gray-800 text-white text-center text-xs p-1 fixed top-0 w-full z-[110]">📡 وضع الأوفلاين (يتم الحفظ تلقائياً)</div>}
         {notification && <NotificationToast message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
 
         {appState.currentUser.role === 'ADMIN' ? (
@@ -272,13 +258,13 @@ const App: React.FC = () => {
                             <div className="space-y-4 animate-fade-in">
                                 <button onClick={() => { setLoginView('PARENT'); setLoginError(''); }} className="w-full bg-white hover:bg-emerald-50 border-2 border-emerald-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group">
                                     <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-emerald-200 transition">👨‍👩‍👧‍👦</div>
-                                    <div className="text-right"><h3 className="font-bold text-lg text-emerald-900">دخول ولي الأمر</h3><p className="text-sm text-gray-500">تابع تقدم ابنك وتواصل مع المعلم</p></div>
+                                    <div className="text-right"><h3 className="font-bold text-lg text-emerald-900">دخول ولي الأمر</h3><p className="text-sm text-gray-500">تابع تقدم ابنك</p></div>
                                 </button>
                                 <button onClick={() => { setLoginView('TEACHER'); setLoginError(''); }} className="w-full bg-white hover:bg-blue-50 border-2 border-blue-100 p-6 rounded-xl shadow-sm transition-all transform hover:scale-[1.02] flex items-center gap-4 group">
                                     <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-2xl group-hover:bg-blue-200 transition">👳‍♂️</div>
-                                    <div className="text-right"><h3 className="font-bold text-lg text-blue-900">دخول المعلم</h3><p className="text-sm text-gray-500">إدارة الحلقة وتسجيل الطلاب</p></div>
+                                    <div className="text-right"><h3 className="font-bold text-lg text-blue-900">دخول المعلم</h3><p className="text-sm text-gray-500">إدارة الحلقة</p></div>
                                 </button>
-                                <div className="mt-8 text-center pt-4 border-t border-gray-100"><button onClick={() => setLoginView('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">🔐 دخول المسؤول (المبرمج)</button></div>
+                                <div className="mt-8 text-center pt-4 border-t border-gray-100"><button onClick={() => setLoginView('ADMIN')} className="text-xs text-gray-400 hover:text-gray-600 font-bold">🔐 دخول المسؤول</button></div>
                             </div>
                         )}
                         <div className="space-y-8">
