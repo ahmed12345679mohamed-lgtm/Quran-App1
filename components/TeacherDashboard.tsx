@@ -358,10 +358,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     return students.filter(s => !s.logs.some(l => new Date(l.date).toDateString() === todayStr));
   }, [students]);
 
-  // Use allTeachers directly to allow selecting any teacher (including self)
-  const availableTesters = useMemo(() => {
-      return allTeachers || [];
-  }, [allTeachers]);
+  // Use allTeachers directly to ensure updates are reflected
+  const availableTesters = useMemo(() => allTeachers || [], [allTeachers]);
 
   // Reset attendance map when unlogged students change
   useEffect(() => {
@@ -1263,15 +1261,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                         <div>
                                             <label className="block text-xs font-bold text-gray-600 mb-1">اختر المحفظ المختبر</label>
                                             <select 
-                                                className="w-full p-4 text-xl border-2 border-indigo-200 rounded-xl bg-white text-indigo-900 font-bold focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition outline-none cursor-pointer text-center" 
+                                                className="w-full p-4 text-xl border-2 border-indigo-200 rounded-xl bg-white text-gray-900 font-bold focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 transition outline-none cursor-pointer" 
                                                 value={examTesterId} 
                                                 onChange={(e) => setExamTesterId(e.target.value)}
                                             >
-                                                <option value="">-- اختر المحفظ --</option>
+                                                <option value="" className="text-gray-500">-- اختر المحفظ --</option>
                                                 {availableTesters.length > 0 ? (
-                                                    availableTesters.map(t => (<option key={t.id} value={t.id}>{t.name} {t.id === teacherId ? '(أنت)' : ''}</option>))
+                                                    availableTesters.map(t => (<option key={t.id} value={t.id} className="text-gray-900">{t.name} {t.id === teacherId ? '(أنت)' : ''}</option>))
                                                 ) : (
-                                                    <option value="" disabled>لا يوجد محفظين</option>
+                                                    <option value="" disabled className="text-gray-400">لا يوجد محفظين</option>
                                                 )}
                                             </select>
                                         </div>
@@ -1308,7 +1306,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                                 <Button className="w-full mt-2" onClick={() => {
                                     if (announcementType === 'EXAM') {
                                         if (!examTesterId || examDays.length === 0) { onShowNotification('يرجى اختيار المحفظ وإضافة يوم اختبار واحد على الأقل', 'error'); return; }
-                                        const tester = allTeachers.find(t => t.id === examTesterId);
+                                        const tester = allTeachers?.find(t => t.id === examTesterId);
                                         onAddAnnouncement({
                                             id: Date.now().toString(),
                                             teacherId,

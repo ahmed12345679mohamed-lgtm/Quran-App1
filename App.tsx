@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { Student, AppState, UserRole, Teacher, DailyLog, Announcement, QuizItem, AdabSession } from './types';
 import { INITIAL_STUDENTS, INITIAL_TEACHERS, DAYS_OF_WEEK, APP_VERSION } from './constants';
@@ -59,7 +57,7 @@ const App: React.FC = () => {
       const saved = localStorage.getItem('muhaffiz_announcements_v100');
       return saved ? JSON.parse(saved) : [];
   });
-  
+
   // New Adab Archive State
   const [adabArchive, setAdabArchive] = useState<AdabSession[]>(() => {
       const saved = localStorage.getItem('muhaffiz_adab_archive');
@@ -326,7 +324,7 @@ const App: React.FC = () => {
                   const updatedLogs = [...s.logs];
                   updatedLogs[existingLogIndex] = {
                       ...updatedLogs[existingLogIndex],
-                      isAdab: true,
+                      isAdab: true, 
                       adabSession: adabSessionData,
                   };
                   return { ...s, logs: updatedLogs };
@@ -362,7 +360,7 @@ const App: React.FC = () => {
                   if (log.adabSession?.id === sessionId) {
                       return {
                           ...log,
-                          adabSession: { ...log.adabSession, title, quizzes },
+                          adabSession: { ...log.adabSession!, title, quizzes },
                           // RESET PARENT INTERACTION
                           seenByParent: false,
                           parentQuizScore: undefined,
@@ -466,12 +464,10 @@ const App: React.FC = () => {
                 teacherName={appState.currentUser.name || 'المعلم'}
                 teacherId={appState.currentUser.id || 't1'}
                 students={students.filter(s => s.teacherId === appState.currentUser.id)}
+                allTeachers={teachers} 
                 announcements={announcements}
                 adabArchive={adabArchive.filter(s => {
-                    // Filter archive based on logs: Only show adab sessions that appear in this teacher's students logs
-                    // OR just show all if we assume one teacher per device context mostly.
-                    // Better: Filter if the session was created by this teacher logic (but we don't store creatorId in AdabSession yet)
-                    // For now, simple return all is fine or check date.
+                    // Filter archive based on logs or show all
                     return true;
                 })}
                 onUpdateStudent={updateStudent}
@@ -540,9 +536,17 @@ const App: React.FC = () => {
                         {/* LOGIN FORMS */}
                         <div className="space-y-8">
                         {loginView === 'PARENT' && (
-                            <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative">
-                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-emerald-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
-                                <h3 className="text-center font-bold text-emerald-800 text-lg mb-4">تسجيل دخول ولي الأمر</h3>
+                            <form onSubmit={handleParentLogin} className="space-y-4 animate-slide-up relative pt-2">
+                                <div className="flex items-center mb-6 relative">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setLoginView('SELECTION')} 
+                                        className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 transition"
+                                    >
+                                        <span>➜</span> عودة
+                                    </button>
+                                    <h3 className="w-full text-center font-bold text-emerald-800 text-xl">دخول ولي الأمر</h3>
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-600 mb-1">اختر اسم المعلم (الشيخ)</label>
                                     <select 
@@ -572,9 +576,17 @@ const App: React.FC = () => {
                         )}
 
                         {loginView === 'TEACHER' && (
-                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative">
-                                <button type="button" onClick={() => setLoginView('SELECTION')} className="absolute -top-12 right-0 text-gray-500 hover:text-blue-600 flex items-center gap-1 font-bold text-sm bg-white px-3 py-1 rounded-full shadow-sm border border-gray-200">↩ عودة</button>
-                                <h3 className="text-center font-bold text-blue-800 text-lg mb-4">تسجيل دخول المعلم</h3>
+                            <form onSubmit={handleTeacherLogin} className="space-y-4 animate-slide-up relative pt-2">
+                                <div className="flex items-center mb-6 relative">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setLoginView('SELECTION')} 
+                                        className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 transition"
+                                    >
+                                        <span>➜</span> عودة
+                                    </button>
+                                    <h3 className="w-full text-center font-bold text-blue-800 text-xl">دخول المعلم</h3>
+                                </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-600 mb-1 text-center">اختر اسم المعلم</label>
                                     <select 
@@ -632,7 +644,7 @@ const App: React.FC = () => {
                                 <input 
                                     type="tel"
                                     placeholder="01xxxxxxxxx"
-                                    className="w-full p-3 border border-gray-300 rounded-lg text-center text-lg tracking-widest focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    className="w-full p-5 border-2 border-gray-200 rounded-2xl text-center text-4xl font-black tracking-[0.2em] text-emerald-800 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 outline-none transition shadow-sm placeholder:text-gray-300 h-20"
                                     value={parentPhoneInput}
                                     onChange={(e) => setParentPhoneInput(e.target.value)}
                                 />
