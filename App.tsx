@@ -28,7 +28,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// تفعيل التخزين المؤقت
+// تفعيل التخزين المؤقت (للحفظ بدون إنترنت)
 try {
   enableIndexedDbPersistence(db).catch(() => {});
 } catch (e) { }
@@ -38,7 +38,7 @@ const cleanData = (data: any) => {
     return JSON.parse(JSON.stringify(data));
 };
 
-// --- مكونات التصميم الاحترافي ---
+// --- مكونات التصميم الاحترافي الجديدة ---
 
 const Logo = ({ title, small = false }: { title: string, small?: boolean }) => (
   <div className={`flex flex-col items-center ${small ? 'mb-6' : 'mb-10'} relative z-10 transition-all duration-500`}>
@@ -71,12 +71,13 @@ const App: React.FC = () => {
   const [organizationName, setOrganizationName] = useState(() => localStorage.getItem('muhaffiz_org_name') || "دار التوحيد");
   const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
   const [connectionStatus, setConnectionStatus] = useState<'CONNECTING' | 'CONNECTED' | 'ERROR'>('CONNECTING');
   const [detailedError, setDetailedError] = useState('');
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => setNotification({ message, type });
 
-  // Connection & Data Logic
+  // --- الاتصال ---
   useEffect(() => {
     const signIn = async () => {
       try {
@@ -98,25 +99,29 @@ const App: React.FC = () => {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, []);
 
+  // --- جلب البيانات ---
   useEffect(() => {
     const qStudents = query(collection(db, "students"));
     const unsubStudents = onSnapshot(qStudents, { includeMetadataChanges: true }, (snapshot) => {
       setStudents(snapshot.docs.map(doc => doc.data() as Student));
     });
+
     const qTeachers = query(collection(db, "teachers"));
     const unsubTeachers = onSnapshot(qTeachers, { includeMetadataChanges: true }, (snapshot) => setTeachers(snapshot.docs.map(doc => doc.data() as Teacher)));
+    
     const qAnnouncements = query(collection(db, "announcements"));
     const unsubAnnouncements = onSnapshot(qAnnouncements, { includeMetadataChanges: true }, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Announcement);
       data.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setAnnouncements(data);
     });
+
     return () => { unsubStudents(); unsubTeachers(); unsubAnnouncements(); };
   }, []);
 
   useEffect(() => { localStorage.setItem('muhaffiz_org_name', organizationName); document.title = `${organizationName}`; }, [organizationName]);
 
-  // PWA
+  // PWA Install Logic
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isIOS, setIsIOS] = useState(false);
   useEffect(() => {
@@ -150,10 +155,11 @@ const App: React.FC = () => {
   const handleAdminLogin = (e: React.FormEvent) => { e.preventDefault(); if(adminPassword === (localStorage.getItem('admin_password') || '456888')) { setAppState(prev => ({...prev, currentUser: { role: 'ADMIN', name: 'المبرمج' }})); setLoginError(''); } else { setLoginError('كلمة المرور خطأ'); } };
   const handleLogout = () => { setAppState(prev => ({...prev, currentUser: { role: 'GUEST' }})); setLoginView('SELECTION'); setLoginError(''); setParentCodeInput(''); setTeacherCodeInput(''); setAdminPassword(''); setShowPhoneSetup(false); };
 
-  // Unified Save & CRUD
+  // CRUD
   const updateStudent = async (s: Student) => { try { await setDoc(doc(db, "students", s.id), cleanData(s)); showNotification('تم الحفظ بنجاح ✅', 'success'); } catch(e: any) { showNotification('حدث خطأ في الحفظ', 'error'); } };
   const addStudent = async (name: string, code: string) => { const s: Student = { id: 's_'+Date.now(), teacherId: appState.currentUser.id!, name, parentCode: code, logs: [], payments: [], weeklySchedule: DAYS_OF_WEEK.map(d => ({day: d, events: []})) }; try { await setDoc(doc(db, "students", s.id), cleanData(s)); showNotification('تمت إضافة الطالب بنجاح ✅', 'success'); return s; } catch(e: any) { showNotification('خطأ في الإضافة', 'error'); return s; } };
   const deleteStudents = async (ids: string[]) => { if(window.confirm('حذف؟')) ids.forEach(id => deleteDoc(doc(db, "students", id))); };
+  
   const markAbsences = async (absentIds: string[], excusedIds: string[]) => { 
       const teacherId = appState.currentUser.id || 'unknown'; const teacherName = appState.currentUser.name || 'المعلم';
       [...absentIds, ...excusedIds].forEach(async (id) => {
@@ -166,12 +172,14 @@ const App: React.FC = () => {
       });
       showNotification('تم تسجيل الغياب بنجاح ✅', 'success');
   };
+
   const addTeacher = async (name: string, code: string) => { const t: Teacher = { id: 't_'+Date.now(), name, loginCode: code }; await setDoc(doc(db, "teachers", t.id), cleanData(t)); showNotification('تمت الإضافة'); };
   const updateTeacher = async (id: string, name: string, code: string) => { await setDoc(doc(db, "teachers", id), cleanData({ id, name, loginCode: code })); showNotification('تم التعديل'); };
   const deleteTeacher = async (id: string) => { if(window.confirm('حذف؟')) deleteDoc(doc(db, "teachers", id)); };
   const markSeen = async (sid: string, lids: string[]) => { const s = students.find(x => x.id === sid); if(s) { const logs = s.logs.map(l => lids.includes(l.id) ? { ...l, seenByParent: true, seenAt: new Date().toISOString() } : l); await setDoc(doc(db, "students", sid), cleanData({ ...s, logs })); } };
   const addAnnounce = async (a: Announcement) => { await setDoc(doc(db, "announcements", a.id), cleanData(a)); };
   const delAnnounce = async (id: string) => { if(window.confirm('حذف؟')) deleteDoc(doc(db, "announcements", id)); };
+  
   const publishAdab = async (title: string, quizzes: QuizItem[]) => {
       const teacherId = appState.currentUser.id!; const teacherName = appState.currentUser.name!;
       const ann: Announcement = { id: 'ann_'+Date.now(), teacherId, teacherName, content: `***${title}\nيرجى المشاركة في حل الأسئلة!`, date: new Date().toISOString(), type: 'GENERAL' };
@@ -188,6 +196,7 @@ const App: React.FC = () => {
       });
       showNotification('تم النشر بنجاح ✅', 'success');
   };
+
   const handleEditAdab = () => {}; const handleDeleteAdab = () => {}; const handleQuickAnnouncement = () => {};
 
   if (connectionStatus === 'ERROR') {
@@ -200,14 +209,14 @@ const App: React.FC = () => {
       );
   }
 
-  // --- Main Render ---
+  // --- واجهة المستخدم (التصميم الجديد) ---
   return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 font-sans text-gray-900 overflow-x-hidden selection:bg-emerald-200">
         
         {/* شريط حالة الاتصال */}
         {!isOnline && (
             <div className="bg-gray-800/90 backdrop-blur text-white text-center text-xs p-1.5 fixed top-0 w-full z-[200] font-medium tracking-wide shadow-md">
-                📡 وضع الأوفلاين (الحفظ مفعل تلقائياً)
+                📡 وضع الأوفلاين (يتم الحفظ تلقائياً)
             </div>
         )}
 
