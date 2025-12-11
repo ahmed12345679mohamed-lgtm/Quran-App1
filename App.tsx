@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Student, Grade, QuranAssignment, Announcement, Payment, QuizItem, Teacher, AttendanceRecord, MultiSurahDetail, ExamDayDetail, AdabSession } from '../types';
+import { Student, Grade, QuranAssignment, Announcement, Payment, QuizItem, Teacher, AttendanceRecord, MultiSurahDetail, ExamDayDetail, AdabSession } from './types';
 import { SURAH_NAMES, JUZ_LIST, SURAH_DATA, formatTime12Hour, formatSimpleDate, formatDateWithDay } from '../constants';
 import { Button } from './Button';
 import { TimePicker } from './TimePicker';
