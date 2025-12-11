@@ -1,91 +1,243 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { Teacher, Student } from '../types';
 import { Button } from './Button';
 
 interface AdminDashboardProps {
   teachers: Teacher[];
+  // Added students prop to calculate counts
   students: Student[];
-  onAddTeacher: (name: string, code: string) => void;
-  onUpdateTeacher: (id: string, name: string, code: string) => void;
+  onAddTeacher: (name: string, loginCode: string) => void;
+  onUpdateTeacher: (id: string, name: string, loginCode: string) => void;
   onDeleteTeacher: (id: string) => void;
   onLogout: () => void;
-  onShowNotification: (msg: string, type: 'success' | 'error') => void;
+  onShowNotification: (message: string, type: 'success' | 'error') => void;
   organizationName: string;
   onUpdateOrganizationName: (name: string) => void;
 }
 
-const StatBox = ({ label, val, color }: any) => (
-    <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 text-center hover:shadow-md transition-all duration-300 group">
-        <h3 className="text-4xl font-black text-slate-800 mb-2 group-hover:scale-110 transition-transform">{val}</h3>
-        <p className={`text-xs font-bold uppercase tracking-widest ${color}`}>{label}</p>
-    </div>
-);
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
+    teachers, 
+    students,
+    onAddTeacher, 
+    onUpdateTeacher, 
+    onDeleteTeacher, 
+    onLogout, 
+    onShowNotification,
+    organizationName,
+    onUpdateOrganizationName
+}) => {
+  const [name, setName] = useState('');
+  const [loginCode, setLoginCode] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = (props) => {
-  const [activeView, setActiveView] = useState<'TEACHERS' | 'SETTINGS'>('TEACHERS');
-  const [newTeacherName, setNewTeacherName] = useState('');
-  const [newTeacherCode, setNewTeacherCode] = useState('');
+  // Modal State for Delete
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [teacherToDeleteId, setTeacherToDeleteId] = useState('');
+
+  // Local state for editing org name and password
+  const [tempOrgName, setTempOrgName] = useState(organizationName);
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (name && loginCode) {
+        if (editingId) {
+            onUpdateTeacher(editingId, name, loginCode);
+            setEditingId(null);
+        } else {
+            onAddTeacher(name, loginCode);
+        }
+        setName('');
+        setLoginCode('');
+    }
+  };
+
+  const handleOrgNameSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if(tempOrgName.trim()) {
+          onUpdateOrganizationName(tempOrgName);
+          onShowNotification('تم تحديث اسم المؤسسة بنجاح', 'success');
+      }
+  };
+
+  const handlePasswordChange = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newAdminPassword.length < 4) {
+          onShowNotification('كلمة المرور قصيرة جداً', 'error');
+          return;
+      }
+      localStorage.setItem('admin_password', newAdminPassword);
+      onShowNotification('تم تحديث كلمة مرور المسؤول بنجاح', 'success');
+      setNewAdminPassword('');
+  };
+
+  const startEdit = (t: Teacher) => {
+      setEditingId(t.id);
+      setName(t.name);
+      setLoginCode(t.loginCode);
+      const el = document.getElementById('teacher-form');
+      if(el) el.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const cancelEdit = () => {
+      setEditingId(null);
+      setName('');
+      setLoginCode('');
+  };
+
+  const handleDeleteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (teacherToDeleteId) {
+        onDeleteTeacher(teacherToDeleteId);
+        setShowDeleteModal(false);
+        setTeacherToDeleteId('');
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-slate-800">
-        <div className="bg-slate-900 text-white p-8 pb-32 shadow-xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
-            <div className="flex justify-between items-center mb-10 relative z-10">
-                <h1 className="text-3xl font-bold tracking-tight">لوحة الإدارة 🛠️</h1>
-                <button onClick={props.onLogout} className="bg-white/10 hover:bg-white/20 px-5 py-2.5 rounded-xl text-sm font-bold transition backdrop-blur-md">خروج</button>
-            </div>
-            <div className="grid grid-cols-2 gap-6 max-w-2xl mx-auto relative z-10">
-                <StatBox label="المعلمون" val={props.teachers.length} color="text-blue-500" />
-                <StatBox label="الطلاب" val={props.students.length} color="text-emerald-500" />
-            </div>
+    <div className="min-h-screen bg-gray-800 p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex justify-between items-center mb-8 text-white">
+            <h1 className="text-2xl font-bold">لوحة تحكم المبرمج (المسؤول)</h1>
+            <Button variant="danger" onClick={onLogout}>خروج</Button>
         </div>
 
-        <div className="max-w-2xl mx-auto px-4 -mt-20 relative z-10 pb-20">
-            <div className="bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden min-h-[500px]">
-                <div className="flex border-b border-slate-100 p-2">
-                    <button onClick={() => setActiveView('TEACHERS')} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'TEACHERS' ? 'bg-slate-100 text-slate-900 shadow-inner' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>المحفظين</button>
-                    <button onClick={() => setActiveView('SETTINGS')} className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${activeView === 'SETTINGS' ? 'bg-slate-100 text-slate-900 shadow-inner' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}>الإعدادات</button>
+        {/* Global Settings Section */}
+        <div className="bg-white rounded-xl p-6 shadow-lg mb-6 relative border-l-4 border-purple-500 space-y-6">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">🏠 إعدادات التطبيق العامة</h2>
+            
+            {/* Org Name */}
+            <form onSubmit={handleOrgNameSubmit} className="flex gap-4 items-end border-b pb-6">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">اسم الدار / المؤسسة (يظهر في شاشة الدخول)</label>
+                    <input 
+                        type="text" 
+                        value={tempOrgName} 
+                        onChange={e => setTempOrgName(e.target.value)}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500"
+                        placeholder="مثال: دار النور لتحفيظ القرآن"
+                    />
                 </div>
+                <Button type="submit" className="bg-purple-600 hover:bg-purple-700 h-10">حفظ الاسم</Button>
+            </form>
 
-                <div className="p-8">
-                    {activeView === 'TEACHERS' && (
-                        <div className="space-y-8 animate-fade-in">
-                            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                                <h3 className="font-bold text-slate-700 mb-4 text-sm flex items-center gap-2">✨ إضافة محفظ جديد</h3>
-                                <div className="space-y-3">
-                                    <input className="w-full p-4 bg-white rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500/20 transition text-sm" placeholder="الاسم" value={newTeacherName} onChange={e => setNewTeacherName(e.target.value)} />
-                                    <input className="w-full p-4 bg-white rounded-2xl border border-slate-200 outline-none focus:ring-2 focus:ring-blue-500/20 transition font-mono text-center tracking-widest text-sm" placeholder="كود الدخول (4 أرقام)" value={newTeacherCode} onChange={e => setNewTeacherCode(e.target.value)} />
-                                    <Button onClick={() => { if(newTeacherName && newTeacherCode) { props.onAddTeacher(newTeacherName, newTeacherCode); setNewTeacherName(''); setNewTeacherCode(''); } }} className="w-full py-4 bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 rounded-2xl font-bold">إضافة +</Button>
+            {/* Admin Password */}
+            <form onSubmit={handlePasswordChange} className="flex gap-4 items-end">
+                <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">تغيير كلمة مرور المسؤول</label>
+                    <input 
+                        type="password" 
+                        value={newAdminPassword} 
+                        onChange={e => setNewAdminPassword(e.target.value)}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500"
+                        placeholder="أدخل كلمة المرور الجديدة"
+                    />
+                </div>
+                <Button type="submit" variant="secondary" className="h-10">تحديث كلمة المرور</Button>
+            </form>
+        </div>
+
+        {/* Delete Modal for Teachers */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl animate-fade-in">
+                  <h2 className="text-xl font-bold mb-4 text-red-600">حذف محفظ</h2>
+                  <p className="mb-4 text-gray-600 text-sm">اختر اسم المحفظ الذي تريد حذفه. سيتم إزالة المحفظ ومجموعته من القائمة.</p>
+                  <form onSubmit={handleDeleteSubmit}>
+                      <label className="block mb-2 text-sm font-bold">اختر الاسم</label>
+                      <select 
+                        className="w-full p-3 border rounded mb-6 bg-gray-50"
+                        value={teacherToDeleteId}
+                        onChange={e => setTeacherToDeleteId(e.target.value)}
+                        required
+                      >
+                          <option value="">-- اختر المحفظ --</option>
+                          {teachers.map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                      </select>
+                      
+                      <div className="flex gap-2 justify-end">
+                          <Button type="button" variant="outline" onClick={() => setShowDeleteModal(false)}>إلغاء</Button>
+                          <Button type="submit" variant="danger" disabled={!teacherToDeleteId}>تأكيد الحذف</Button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+        )}
+
+        <div id="teacher-form" className="bg-white rounded-xl p-6 shadow-lg mb-6 relative">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">{editingId ? 'تعديل بيانات محفظ' : 'إضافة محفظ جديد'}</h2>
+                <Button variant="danger" type="button" onClick={() => setShowDeleteModal(true)}>حذف محفظ</Button>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">اسم المحفظ</label>
+                    <input 
+                        type="text" 
+                        value={name} 
+                        onChange={e => setName(e.target.value)}
+                        className="w-full p-2 border rounded"
+                        placeholder="الشيخ ...."
+                        required
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">رقم الدخول الخاص (Access Code)</label>
+                    <input 
+                        type="text" 
+                        value={loginCode} 
+                        onChange={e => setLoginCode(e.target.value)}
+                        className="w-full p-2 border rounded font-mono"
+                        placeholder="أدخل رقماً مميزاً"
+                        required
+                    />
+                </div>
+                <div className="flex gap-2">
+                    <Button type="submit">{editingId ? 'حفظ التعديلات' : 'إضافة للقائمة'}</Button>
+                    {editingId && <Button type="button" variant="outline" onClick={cancelEdit}>إلغاء</Button>}
+                </div>
+            </form>
+        </div>
+
+        <div className="bg-white rounded-xl p-6 shadow-lg">
+            <h2 className="text-xl font-bold text-gray-800 mb-4">قائمة المحفظين الحاليين</h2>
+            <div className="space-y-2">
+                {teachers.length === 0 ? (
+                    <p className="text-gray-500 text-center">لا يوجد محفظين.</p>
+                ) : (
+                    teachers.map(t => {
+                        // Calculate student count per teacher
+                        const studentCount = students.filter(s => s.teacherId === t.id).length;
+                        return (
+                            <div key={t.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
+                                <div>
+                                    <p className="font-bold text-gray-800 flex items-center gap-2">
+                                        {t.name}
+                                        {/* Display Count in semi-transparent font */}
+                                        <span className="text-sm text-gray-400 font-normal">({studentCount} طالب)</span>
+                                    </p>
+                                    <p className="text-sm text-gray-500 font-mono">كود الدخول: {t.loginCode}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button 
+                                        type="button"
+                                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                                        onClick={(e) => { e.preventDefault(); startEdit(t); }}
+                                    >
+                                        تعديل
+                                    </button>
                                 </div>
                             </div>
-
-                            <div className="space-y-3">
-                                {props.teachers.map(t => (
-                                    <div key={t.id} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:shadow-md transition group hover:border-slate-200">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-xl shadow-sm">👳‍♂️</div>
-                                            <div>
-                                                <p className="font-bold text-slate-800">{t.name}</p>
-                                                <p className="text-xs text-slate-400 font-mono bg-slate-50 px-2 py-0.5 rounded w-fit mt-1">كود: {t.loginCode}</p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => props.onDeleteTeacher(t.id)} className="text-red-300 hover:text-red-600 bg-red-50 p-2.5 rounded-xl opacity-0 group-hover:opacity-100 transition-all hover:bg-red-100">🗑️</button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {activeView === 'SETTINGS' && (
-                        <div className="space-y-6 animate-fade-in text-center py-10">
-                            <label className="block text-sm font-bold text-slate-500">اسم الدار / المؤسسة</label>
-                            <input className="w-full p-5 text-2xl font-black text-center border-2 border-slate-100 rounded-3xl focus:border-slate-800 outline-none transition bg-slate-50 focus:bg-white text-slate-800" value={props.organizationName} onChange={e => props.onUpdateOrganizationName(e.target.value)} />
-                            <p className="text-xs text-slate-400 bg-slate-50 p-3 rounded-xl inline-block border border-slate-100">سيظهر هذا الاسم في أعلى جميع الشاشات.</p>
-                        </div>
-                    )}
-                </div>
+                        );
+                    })
+                )}
             </div>
         </div>
+      </div>
     </div>
   );
 };
